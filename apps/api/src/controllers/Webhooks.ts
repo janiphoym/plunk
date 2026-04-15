@@ -2,15 +2,20 @@ import {Controller, Post} from '@overnightjs/core';
 import type {Prisma} from '@plunk/db';
 import {EmailSourceType, EmailStatus} from '@plunk/db';
 import type {Request, Response} from 'express';
+import {simpleParser} from 'mailparser';
 import signale from 'signale';
 import type Stripe from 'stripe';
 
-import {STRIPE_ENABLED, STRIPE_WEBHOOK_SECRET} from '../app/constants.js';
+import {ProjectDisabledPaymentEmail, sendPlatformEmail} from '@plunk/email';
+import React from 'react';
+
+import {DASHBOARD_URI, LANDING_URI, STRIPE_ENABLED, STRIPE_WEBHOOK_SECRET} from '../app/constants.js';
 import {stripe} from '../app/stripe.js';
 import {prisma} from '../database/prisma.js';
 import {BillingLimitService} from '../services/BillingLimitService.js';
 import {ContactService} from '../services/ContactService.js';
 import {EventService} from '../services/EventService.js';
+import {MembershipService} from '../services/MembershipService.js';
 import {MeterService} from '../services/MeterService.js';
 import {NtfyService} from '../services/NtfyService.js';
 import {SecurityService} from '../services/SecurityService.js';
@@ -142,6 +147,21 @@ export class Webhooks {
             const senderEmail = body.mail?.source;
             const senderFromHeader = body.mail?.commonHeaders?.from?.[0] || senderEmail;
 
+            // Parse email content if available
+            let htmlBody: string | undefined;
+
+            if (body.content) {
+              try {
+                const parsed = await simpleParser(body.content);
+                // Prefer HTML body, fallback to text if no HTML available
+                htmlBody = parsed.html ? String(parsed.html) : parsed.text || undefined;
+                signale.info('[WEBHOOK] Email content parsed successfully');
+              } catch (parseError) {
+                signale.error('[WEBHOOK] Failed to parse email content:', parseError);
+                // Continue processing without content
+              }
+            }
+
             // Process inbound email for each project that has this domain verified
             for (const domainRecord of domainRecords) {
               signale.info(`[WEBHOOK] Processing inbound email for project: ${domainRecord.project.name}`);
@@ -167,13 +187,13 @@ export class Webhooks {
                 );
               }
 
-              // Create an Email record for tracking (no actual email content since it's inbound)
+              // Create an Email record for tracking with parsed content
               const inboundEmail = await prisma.email.create({
                 data: {
                   projectId: domainRecord.projectId,
                   contactId: contact!.id,
                   subject: body.mail?.commonHeaders?.subject || '(No subject)',
-                  body: '', // Inbound emails don't have body content in our system
+                  body: htmlBody || '', // Store HTML body in the body field
                   from: recipientEmail, // The recipient address that received the email
                   sourceType: EmailSourceType.INBOUND,
                   status: EmailStatus.RECEIVED, // Inbound emails use RECEIVED status
@@ -193,7 +213,7 @@ export class Webhooks {
                 );
               }
 
-              // Prepare event data with all inbound email details
+              // Prepare event data with all inbound email details including body content
               const eventData = {
                 messageId: body.mail?.messageId,
                 from: senderEmail,
@@ -203,6 +223,8 @@ export class Webhooks {
                 timestamp: body.mail?.timestamp,
                 recipients: body.receipt?.recipients,
                 hasContent: !!body.content,
+                // Email body content
+                body: htmlBody,
                 // Security verdicts
                 spamVerdict: body.receipt?.spamVerdict?.status,
                 virusVerdict: body.receipt?.virusVerdict?.status,
@@ -269,6 +291,7 @@ export class Webhooks {
         from: email.from,
         fromName: email.fromName,
         messageId: email.messageId,
+        emailId: email.id,
         templateId: email.templateId,
         campaignId: email.campaignId,
         sourceType: email.sourceType,
@@ -519,6 +542,16 @@ export class Webhooks {
           const invoice = event.data.object;
           const customerId = invoice.customer as string;
 
+          // Only disable projects that are already consuming (recurring billing).
+          // If billing_reason is 'subscription_create', this is a first-time payment
+          // attempt and the project has never had an active subscription — don't disable.
+          if (invoice.billing_reason === 'subscription_create') {
+            signale.info(
+              `[WEBHOOK] Payment failed on initial subscription attempt for customer ${customerId}, skipping disable`,
+            );
+            break;
+          }
+
           // Find project by customer ID
           const project = await prisma.project.findUnique({
             where: {customer: customerId},
@@ -529,10 +562,33 @@ export class Webhooks {
             break;
           }
 
-          signale.warn(`[WEBHOOK] Payment failed for project ${project.name} (${project.id})`);
+          signale.warn(`[WEBHOOK] Payment failed for project ${project.name} (${project.id}), disabling project`);
 
-          // Send notification about payment failure
-          await NtfyService.notifyPaymentFailed(project.name, project.id);
+          await prisma.project.update({
+            where: {id: project.id},
+            data: {disabled: true},
+          });
+
+          await NtfyService.notifyProjectDisabledForPayment(project.name, project.id);
+
+          // Send email notification to project members
+          try {
+            const members = await MembershipService.getMembers(project.id);
+            const emails = members.map(m => m.email);
+            if (emails.length > 0) {
+              const template = React.createElement(ProjectDisabledPaymentEmail, {
+                projectName: project.name,
+                projectId: project.id,
+                dashboardUrl: DASHBOARD_URI,
+                landingUrl: LANDING_URI,
+              });
+              await Promise.all(
+                emails.map(email => sendPlatformEmail(email, 'Project Disabled - Payment Failed', template)),
+              );
+            }
+          } catch (emailError) {
+            signale.error(`[WEBHOOK] Failed to send project disabled email:`, emailError);
+          }
           break;
         }
 

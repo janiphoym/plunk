@@ -15,7 +15,7 @@ import {
   Textarea,
 } from '@plunk/ui';
 import type {Segment, Template} from '@plunk/db';
-import {CampaignAudienceType} from '@plunk/db';
+import {CampaignAudienceType, TemplateType} from '@plunk/db';
 import {NextSeo} from 'next-seo';
 import {DashboardLayout} from '../../components/DashboardLayout';
 import {EmailSettings} from '../../components/EmailSettings';
@@ -23,12 +23,13 @@ import {EmailEditor} from '../../components/EmailEditor';
 import {StepHeader} from '../../components/StepHeader';
 import {network} from '../../lib/network';
 import {EmailFormValidator} from '../../lib/validation';
-import {ArrowLeft, Save, Users} from 'lucide-react';
+import {ArrowLeft, Save, TriangleAlert, Users} from 'lucide-react';
 import Link from 'next/link';
 import {useRouter} from 'next/router';
 import {useEffect, useState} from 'react';
 import {toast} from 'sonner';
 import useSWR from 'swr';
+import {detectUnsubscribeSignal} from '@plunk/shared';
 import {useActiveProject} from '../../lib/contexts/ActiveProjectProvider';
 
 export default function CreateCampaignPage() {
@@ -41,6 +42,7 @@ export default function CreateCampaignPage() {
   const [from, setFrom] = useState('');
   const [fromName, setFromName] = useState('');
   const [replyTo, setReplyTo] = useState('');
+  const [campaignType, setCampaignType] = useState<TemplateType>(TemplateType.MARKETING);
   const [audienceType, setAudienceType] = useState<CampaignAudienceType>(CampaignAudienceType.ALL);
   const [segmentId, setSegmentId] = useState('');
   const [saving, setSaving] = useState(false);
@@ -150,6 +152,7 @@ export default function CreateCampaignPage() {
         from,
         fromName: fromName || null,
         replyTo: replyTo || null,
+        type: campaignType,
         audienceType,
         segmentId: audienceType === CampaignAudienceType.SEGMENT ? segmentId : undefined,
         audienceFilter: audienceType === CampaignAudienceType.FILTERED ? [] : undefined,
@@ -256,11 +259,89 @@ export default function CreateCampaignPage() {
                   </CardContent>
                 </Card>
 
-                {/* Email Settings */}
+                {/* Campaign Type */}
                 <Card>
                   <CardHeader>
                     <StepHeader
                       stepNumber={2}
+                      title="Campaign Type"
+                      description="Choose how this campaign should be treated"
+                    />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-3 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setCampaignType(TemplateType.MARKETING)}
+                        className={`text-left p-4 rounded-lg border-2 transition-colors ${
+                          campaignType === TemplateType.MARKETING
+                            ? 'border-neutral-900 bg-neutral-50'
+                            : 'border-neutral-200 hover:border-neutral-300'
+                        }`}
+                      >
+                        <p className="font-medium text-sm text-neutral-900">Marketing</p>
+                        <p className="text-xs text-neutral-500 mt-1">
+                          Sent to subscribed contacts only. Includes unsubscribe link.
+                        </p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCampaignType(TemplateType.TRANSACTIONAL)}
+                        className={`text-left p-4 rounded-lg border-2 transition-colors ${
+                          campaignType === TemplateType.TRANSACTIONAL
+                            ? 'border-neutral-900 bg-neutral-50'
+                            : 'border-neutral-200 hover:border-neutral-300'
+                        }`}
+                      >
+                        <p className="font-medium text-sm text-neutral-900">Transactional</p>
+                        <p className="text-xs text-neutral-500 mt-1">
+                          Sent to all contacts regardless of subscription status. No unsubscribe footer.
+                        </p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCampaignType(TemplateType.HEADLESS)}
+                        className={`text-left p-4 rounded-lg border-2 transition-colors ${
+                          campaignType === TemplateType.HEADLESS
+                            ? 'border-neutral-900 bg-neutral-50'
+                            : 'border-neutral-200 hover:border-neutral-300'
+                        }`}
+                      >
+                        <p className="font-medium text-sm text-neutral-900">Headless</p>
+                        <p className="text-xs text-neutral-500 mt-1">
+                          Sent to subscribed contacts only. No Plunk footer — you provide the unsubscribe link.
+                        </p>
+                      </button>
+                    </div>
+                    {campaignType === TemplateType.HEADLESS && !detectUnsubscribeSignal(body) && (
+                      <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 overflow-hidden">
+                        <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-100/60 px-3 py-2">
+                          <TriangleAlert className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                          <p className="text-xs font-semibold text-amber-900">No unsubscribe link detected</p>
+                        </div>
+                        <div className="px-3 py-2.5 space-y-2">
+                          <p className="text-xs text-amber-800 leading-relaxed">
+                            You are responsible for providing recipients a way to opt out. Use the Plunk variables below to build your own footer.
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            <code className="inline-flex items-center rounded bg-amber-100 border border-amber-200 px-1.5 py-0.5 font-mono text-[11px] text-amber-900">
+                              {'{{unsubscribeUrl}}'}
+                            </code>
+                            <code className="inline-flex items-center rounded bg-amber-100 border border-amber-200 px-1.5 py-0.5 font-mono text-[11px] text-amber-900">
+                              {'{{manageUrl}}'}
+                            </code>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Email Settings */}
+                <Card>
+                  <CardHeader>
+                    <StepHeader
+                      stepNumber={3}
                       title="Email Settings"
                       description="Configure sender information and subject"
                     />
@@ -294,7 +375,7 @@ export default function CreateCampaignPage() {
                 {/* Email Content */}
                 <Card className="overflow-visible">
                   <CardHeader>
-                    <StepHeader stepNumber={3} title="Email Content" description="Design your email message" />
+                    <StepHeader stepNumber={4} title="Email Content" description="Design your email message" />
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-2">
@@ -309,7 +390,7 @@ export default function CreateCampaignPage() {
                 {/* Audience Selection */}
                 <Card>
                   <CardHeader>
-                    <StepHeader stepNumber={4} title="Audience" description="Choose who will receive this campaign" />
+                    <StepHeader stepNumber={5} title="Audience" description="Choose who will receive this campaign" />
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
@@ -327,8 +408,8 @@ export default function CreateCampaignPage() {
                         <SelectContent>
                           <SelectItemWithDescription
                             value={CampaignAudienceType.ALL}
-                            title="All Subscribed Contacts"
-                            description="Send to everyone who hasn't unsubscribed"
+                            title={campaignType === TemplateType.TRANSACTIONAL ? 'All Contacts' : 'All Subscribed Contacts'}
+                            description={campaignType === TemplateType.TRANSACTIONAL ? 'Send to all contacts regardless of subscription status' : "Send to everyone who hasn't unsubscribed"}
                           />
                           <SelectItemWithDescription
                             value={CampaignAudienceType.SEGMENT}
@@ -388,9 +469,13 @@ export default function CreateCampaignPage() {
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
                         <Users className="h-5 w-5 text-blue-600 mt-0.5" />
                         <div>
-                          <p className="text-sm font-medium text-blue-900">All subscribed contacts</p>
+                          <p className="text-sm font-medium text-blue-900">
+                            {campaignType === TemplateType.TRANSACTIONAL ? 'All contacts' : 'All subscribed contacts'}
+                          </p>
                           <p className="text-xs text-blue-700 mt-1">
-                            This campaign will be sent to all contacts who haven&#39;t unsubscribed
+                            {campaignType === TemplateType.TRANSACTIONAL
+                              ? 'This campaign will be sent to all contacts regardless of subscription status'
+                              : "This campaign will be sent to all contacts who haven't unsubscribed"}
                           </p>
                         </div>
                       </div>
@@ -437,6 +522,13 @@ export default function CreateCampaignPage() {
                           </span>
                         </div>
                       )}
+
+                      <div className="flex justify-between py-2 border-b border-neutral-100">
+                        <span className="text-neutral-500">Type</span>
+                        <span className="font-medium">
+                          {campaignType === TemplateType.MARKETING ? 'Marketing' : campaignType === TemplateType.HEADLESS ? 'Headless' : 'Transactional'}
+                        </span>
+                      </div>
 
                       <div className="flex justify-between py-2 border-b border-neutral-100">
                         <span className="text-neutral-500">Audience</span>

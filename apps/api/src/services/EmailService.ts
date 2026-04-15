@@ -38,6 +38,7 @@ interface SendEmailParams {
   workflowExecutionId?: string;
   workflowStepExecutionId?: string;
   recipientEmail?: string; // Optional custom recipient email (overrides contact.email)
+  isTransactional?: boolean; // Override source type to TRANSACTIONAL (e.g. for transactional campaigns)
 }
 
 /**
@@ -116,10 +117,12 @@ export class EmailService {
    * Send a campaign email
    */
   public static async sendCampaignEmail(params: SendEmailParams): Promise<Email> {
-    // Check if template is transactional to determine source type
+    // Check if campaign or template is transactional to determine source type
     let sourceType: EmailSourceType = EmailSourceType.CAMPAIGN;
 
-    if (params.templateId) {
+    if (params.isTransactional) {
+      sourceType = EmailSourceType.TRANSACTIONAL;
+    } else if (params.templateId) {
       const template = await prisma.template.findUnique({
         where: {id: params.templateId},
         select: {type: true},
@@ -290,9 +293,8 @@ export class EmailService {
       include: {
         contact: true,
         project: true,
-        template: {
-          select: {type: true},
-        },
+        template: {select: {type: true}},
+        campaign: {select: {type: true}},
       },
     });
 
@@ -354,11 +356,15 @@ export class EmailService {
       });
 
       // Compile HTML with unsubscribe footer and badge
+      // TRANSACTIONAL and HEADLESS emails don't get the Plunk unsubscribe footer
       const compiledHtml = this.compile({
         content: formattedEmail.body,
         contact: email.contact,
         project: email.project,
-        includeUnsubscribe: email.sourceType !== EmailSourceType.TRANSACTIONAL, // Don't add unsubscribe to transactional emails
+        includeUnsubscribe:
+          email.sourceType !== EmailSourceType.TRANSACTIONAL &&
+          email.template?.type !== 'HEADLESS' &&
+          email.campaign?.type !== 'HEADLESS',
       });
 
       // Use explicit fromName if provided, otherwise fall back to project name
