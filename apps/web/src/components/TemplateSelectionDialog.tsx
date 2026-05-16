@@ -12,6 +12,8 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  EmptyState,
+  IconSpinner,
   Input,
   Label,
 } from '@plunk/ui';
@@ -104,7 +106,7 @@ export function TemplateSelectionDialog({open, onOpenChange, onSelectTemplate}: 
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {step === 'configure' && (
-              <Button variant="ghost" size="sm" onClick={handleBack} className="h-8 w-8 p-0">
+              <Button variant="ghost" size="icon" onClick={handleBack}>
                 <ArrowLeft className="h-4 w-4" />
               </Button>
             )}
@@ -204,39 +206,21 @@ export function TemplateSelectionDialog({open, onOpenChange, onSelectTemplate}: 
             <div className="flex-1 overflow-y-auto space-y-3">
               {isLoading && (
                 <div className="flex items-center justify-center py-12">
-                  <div className="text-center">
-                    <svg
-                      className="h-8 w-8 animate-spin mx-auto text-neutral-900"
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      />
-                    </svg>
-                    <p className="mt-2 text-sm text-neutral-500">Loading templates...</p>
-                  </div>
+                  <IconSpinner />
                 </div>
               )}
-
               {!isLoading && data?.data.length === 0 && (
-                <div className="text-center py-12">
-                  <FileText className="h-12 w-12 text-neutral-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-neutral-900 mb-2">No templates found</h3>
-                  <p className="text-neutral-500">
-                    {search ? 'Try adjusting your search terms' : 'Create a template first to use this feature'}
-                  </p>
-                </div>
+                <EmptyState
+                  icon={FileText}
+                  title="No templates found"
+                  description={search ? 'Try adjusting your search terms.' : 'Create a template first to use this feature.'}
+                />
               )}
 
               {data?.data.map(template => (
                 <Card
                   key={template.id}
-                  className="cursor-pointer hover:border-primary/50 hover:shadow-md transition-all"
+                  className="cursor-pointer hover:border-neutral-400 transition-colors"
                   onClick={() => handleTemplateClick(template)}
                 >
                   <CardHeader className="pb-3">
@@ -244,7 +228,7 @@ export function TemplateSelectionDialog({open, onOpenChange, onSelectTemplate}: 
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <CardTitle className="text-base truncate">{template.name}</CardTitle>
-                          <Badge className="capitalize" variant={template.type === 'MARKETING' ? 'info' : template.type === 'HEADLESS' ? 'warning' : 'success'}>
+                          <Badge className="capitalize" variant="neutral">
                             {template.type.toLowerCase()}
                           </Badge>
                         </div>
@@ -295,35 +279,26 @@ export function TemplateSelectionDialog({open, onOpenChange, onSelectTemplate}: 
         ) : (
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto space-y-6 pr-2">
+            <div className="flex-1 overflow-y-auto pr-2">
               {/* Template Preview */}
               {selectedTemplate && (
-                <Card className="bg-neutral-50">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <CardTitle className="text-base">{selectedTemplate.name}</CardTitle>
-                          <Badge
-                            className="capitalize"
-                            variant={selectedTemplate.type === 'MARKETING' ? 'info' : 'success'}
-                          >
-                            {selectedTemplate.type.toLowerCase()}
-                          </Badge>
-                        </div>
-                        {selectedTemplate.description && (
-                          <CardDescription className="text-xs">{selectedTemplate.description}</CardDescription>
-                        )}
-                      </div>
-                    </div>
-                  </CardHeader>
-                </Card>
+                <div className="pb-4 mb-1 border-b border-neutral-100">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-neutral-900">{selectedTemplate.name}</span>
+                    <Badge className="capitalize" variant="neutral">
+                      {selectedTemplate.type.toLowerCase()}
+                    </Badge>
+                  </div>
+                  {selectedTemplate.description && (
+                    <p className="text-xs text-neutral-500 mt-1">{selectedTemplate.description}</p>
+                  )}
+                </div>
               )}
 
               {/* Field Selection */}
-              <div className="space-y-3">
+              <div className="divide-y divide-neutral-100">
                 <div
-                  className="flex items-center space-x-3 p-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 transition-colors cursor-pointer"
+                  className="flex items-center gap-3 py-3 cursor-pointer hover:text-neutral-900 transition-colors"
                   onClick={() => toggleField('subject')}
                 >
                   <Checkbox
@@ -336,13 +311,13 @@ export function TemplateSelectionDialog({open, onOpenChange, onSelectTemplate}: 
                       Email Subject
                     </Label>
                     {selectedTemplate?.subject && (
-                      <p className="text-xs text-neutral-500 mt-0.5">{selectedTemplate.subject}</p>
+                      <p className="text-xs text-neutral-400 mt-0.5 truncate">{selectedTemplate.subject}</p>
                     )}
                   </div>
                 </div>
 
                 <div
-                  className="flex items-center space-x-3 p-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 transition-colors cursor-pointer"
+                  className="flex items-center gap-3 py-3 cursor-pointer hover:text-neutral-900 transition-colors"
                   onClick={() => toggleField('body')}
                 >
                   <Checkbox id="body" checked={selectedFields.body} onCheckedChange={() => toggleField('body')} />
@@ -350,12 +325,12 @@ export function TemplateSelectionDialog({open, onOpenChange, onSelectTemplate}: 
                     <Label htmlFor="body" className="text-sm font-medium cursor-pointer">
                       Email Body
                     </Label>
-                    <p className="text-xs text-neutral-500 mt-0.5">The full email content and design</p>
+                    <p className="text-xs text-neutral-400 mt-0.5">Full email content and design</p>
                   </div>
                 </div>
 
                 <div
-                  className="flex items-center space-x-3 p-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 transition-colors cursor-pointer"
+                  className="flex items-center gap-3 py-3 cursor-pointer hover:text-neutral-900 transition-colors"
                   onClick={() => toggleField('from')}
                 >
                   <Checkbox id="from" checked={selectedFields.from} onCheckedChange={() => toggleField('from')} />
@@ -364,13 +339,13 @@ export function TemplateSelectionDialog({open, onOpenChange, onSelectTemplate}: 
                       From Email
                     </Label>
                     {selectedTemplate?.from && (
-                      <p className="text-xs text-neutral-500 mt-0.5">{selectedTemplate.from}</p>
+                      <p className="text-xs text-neutral-400 mt-0.5">{selectedTemplate.from}</p>
                     )}
                   </div>
                 </div>
 
                 <div
-                  className="flex items-center space-x-3 p-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 transition-colors cursor-pointer"
+                  className="flex items-center gap-3 py-3 cursor-pointer hover:text-neutral-900 transition-colors"
                   onClick={() => toggleField('fromName')}
                 >
                   <Checkbox
@@ -383,13 +358,13 @@ export function TemplateSelectionDialog({open, onOpenChange, onSelectTemplate}: 
                       From Name
                     </Label>
                     {selectedTemplate?.fromName && (
-                      <p className="text-xs text-neutral-500 mt-0.5">{selectedTemplate.fromName}</p>
+                      <p className="text-xs text-neutral-400 mt-0.5">{selectedTemplate.fromName}</p>
                     )}
                   </div>
                 </div>
 
                 <div
-                  className="flex items-center space-x-3 p-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 transition-colors cursor-pointer"
+                  className="flex items-center gap-3 py-3 cursor-pointer hover:text-neutral-900 transition-colors"
                   onClick={() => toggleField('replyTo')}
                 >
                   <Checkbox
@@ -402,7 +377,7 @@ export function TemplateSelectionDialog({open, onOpenChange, onSelectTemplate}: 
                       Reply-To Email
                     </Label>
                     {selectedTemplate?.replyTo && (
-                      <p className="text-xs text-neutral-500 mt-0.5">{selectedTemplate.replyTo}</p>
+                      <p className="text-xs text-neutral-400 mt-0.5">{selectedTemplate.replyTo}</p>
                     )}
                   </div>
                 </div>

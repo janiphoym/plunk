@@ -1,4 +1,4 @@
-import {Button, Card, CardContent} from '@plunk/ui';
+import {Button, Card, CardContent, IconSpinner} from '@plunk/ui';
 import {createTranslator, type Translator} from '@plunk/shared';
 import {AnimatePresence, motion} from 'framer-motion';
 import {useRouter} from 'next/router';
@@ -82,19 +82,7 @@ export default function Manage() {
           <Card>
             <CardContent className="p-8">
               <div className="flex flex-col items-center gap-4">
-                <svg
-                  className="h-8 w-8 animate-spin text-neutral-500"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  />
-                </svg>
+                <IconSpinner />
                 <p className="text-sm text-neutral-500">Loading...</p>
               </div>
             </CardContent>
@@ -111,19 +99,7 @@ export default function Manage() {
           <Card>
             <CardContent className="p-8">
               <div className="flex flex-col items-center gap-4">
-                <svg
-                  className="h-8 w-8 animate-spin text-neutral-500"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  />
-                </svg>
+                <IconSpinner />
                 <p className="text-sm text-neutral-500">{translator.t('pages.common.loading')}</p>
               </div>
             </CardContent>
@@ -189,7 +165,7 @@ export default function Manage() {
                   <button
                     onClick={() => void handleToggleSubscription()}
                     disabled={updating}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2 ${
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
                       contact?.subscribed ? 'bg-neutral-900' : 'bg-neutral-200'
                     } ${updating ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >

@@ -76,7 +76,6 @@ export function EmailEditor({value, onChange, placeholder, subject, from, replyT
   // Fetch contacts for preview using SWR
   const {contacts} = useContacts({limit: 50});
 
-  // Update available variables when fields change
   useEffect(() => {
     if (availableFields.length > 0) {
       setAvailableVariables(availableFields);
@@ -307,21 +306,31 @@ export function EmailEditor({value, onChange, placeholder, subject, from, replyT
         iframeDoc.write(fullHtml);
         iframeDoc.close();
 
-        // Auto-adjust iframe height to content
+        // Auto-adjust iframe height to content. Reset to a small value first so
+        // body content that uses % / vh heights doesn't lock the iframe to its
+        // previous size (which would otherwise cause the iframe to grow by the
+        // padding offset on every preview-device switch).
         const adjustHeight = () => {
-          if (iframe.contentWindow) {
-            const height = iframe.contentWindow.document.body.scrollHeight;
-            iframe.style.height = `${Math.max(400, height + 40)}px`;
-          }
+          if (!iframe.contentWindow) return;
+          iframe.style.height = '0px';
+          const doc = iframe.contentWindow.document;
+          const height = Math.max(
+            doc.body?.scrollHeight ?? 0,
+            doc.documentElement?.scrollHeight ?? 0,
+          );
+          iframe.style.height = `${Math.max(400, height + 40)}px`;
         };
 
-        // Adjust height after content loads
-        if (iframe.contentWindow) {
-          iframe.contentWindow.addEventListener('load', adjustHeight);
-          // Also adjust immediately for already-loaded content
-          setTimeout(adjustHeight, 100);
-          setTimeout(adjustHeight, 300); // Fallback for slow-loading images
-        }
+        const timeouts = [
+          window.setTimeout(adjustHeight, 100),
+          window.setTimeout(adjustHeight, 300),
+        ];
+        iframe.contentWindow?.addEventListener('load', adjustHeight);
+
+        return () => {
+          timeouts.forEach(window.clearTimeout);
+          iframe.contentWindow?.removeEventListener('load', adjustHeight);
+        };
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -894,8 +903,8 @@ export function EmailEditor({value, onChange, placeholder, subject, from, replyT
           border: 1px solid #e5e7eb;
           border-radius: 8px;
           box-shadow:
-            0 10px 15px -3px rgba(0, 0, 0, 0.1),
-            0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            0 4px 6px -1px rgba(0, 0, 0, 0.07),
+            0 2px 4px -1px rgba(0, 0, 0, 0.04);
           padding: 4px;
           max-height: 320px;
           overflow-y: auto;

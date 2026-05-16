@@ -21,7 +21,7 @@ function Document({locale}: {locale: string}) {
           property="og:description"
           content="Manage your email campaigns, contacts, and analytics with Plunk - the open-source email platform."
         />
-        <meta property="og:image" content="/assets/card.png" />
+        <meta property="og:image" content="https://next-app.useplunk.com/api/og?title=Email%20Platform%20Dashboard" />
 
         {/* Twitter */}
         <meta property="twitter:card" content="summary_large_image" />
@@ -30,7 +30,7 @@ function Document({locale}: {locale: string}) {
           property="twitter:description"
           content="Manage your email campaigns, contacts, and analytics with Plunk - the open-source email platform."
         />
-        <meta property="twitter:image" content="/assets/card.png" />
+        <meta property="twitter:image" content="https://next-app.useplunk.com/api/og?title=Email%20Platform%20Dashboard" />
 
         {/* Fonts */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -41,9 +41,10 @@ function Document({locale}: {locale: string}) {
         />
 
         {/* Favicon */}
+        <link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg" />
         <link rel="icon" type="image/png" href="/favicon/favicon-32x32.png" sizes="32x32" />
         <link rel="icon" type="image/png" href="/favicon/favicon-16x16.png" sizes="16x16" />
-        <link rel="shortcut icon" href="/favicon/favicon.ico" />
+        <link rel="shortcut icon" href="/favicon.ico" />
         <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
         <link rel="mask-icon" href="/favicon/safari-pinned-tab.svg" color="#5bbad5" />
         <meta name="apple-mobile-web-app-title" content="Plunk" />

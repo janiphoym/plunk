@@ -33,25 +33,25 @@ function HelpResources() {
   };
 
   return (
-    <div className="mt-4 pt-4 border-t border-neutral-200">
+    <div className="px-6 pb-6 pt-4 border-t border-neutral-200">
       <p className="text-xs font-medium text-neutral-500 mb-3">Need help?</p>
       <div className="flex flex-col sm:flex-row gap-2">
-        <Link href={WIKI_URI} target="_blank" className="flex-1">
-          <Button variant="outline" size="sm" className="w-full">
+        <Button asChild variant="outline" size="sm" className="flex-1">
+          <Link href={WIKI_URI} target="_blank">
             <BookOpen className="h-3.5 w-3.5" />
             Documentation
-          </Button>
-        </Link>
-        <Link href={`${LANDING_URI}/discord`} target="_blank" className="flex-1">
-          <Button variant="outline" size="sm" className="w-full">
+          </Link>
+        </Button>
+        <Button asChild variant="outline" size="sm" className="flex-1">
+          <Link href={`${LANDING_URI}/discord`} target="_blank">
             <MessageCircle className="h-3.5 w-3.5" />
             Join Discord
-          </Button>
-        </Link>
+          </Link>
+        </Button>
         <motion.button
           onClick={copyEmail}
           whileTap={{scale: 0.97}}
-          className="flex-1 relative flex items-center justify-center gap-1.5 rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 overflow-hidden transition-colors hover:bg-neutral-50 hover:text-neutral-900 hover:border-neutral-300"
+          className="flex-1 relative flex items-center justify-center gap-1.5 h-9 rounded-md border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700 overflow-hidden transition-colors hover:bg-neutral-50 hover:text-neutral-900 hover:border-neutral-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           <AnimatePresence mode="wait" initial={false}>
             {copied ? (
@@ -101,12 +101,12 @@ export function QuickStart({setupState, isLoading}: QuickStartProps) {
 
   if (isLoading || !setupState) {
     return (
-      <Card>
+      <Card className="flex flex-col h-full">
         <CardHeader>
           <CardTitle>Quick Start</CardTitle>
           <CardDescription>Get started with Plunk in minutes</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex-1 min-h-0 overflow-y-auto">
           <div className="space-y-3">
             {[1, 2, 3].map(i => (
               <div
@@ -122,8 +122,8 @@ export function QuickStart({setupState, isLoading}: QuickStartProps) {
               </div>
             ))}
           </div>
-          <HelpResources />
         </CardContent>
+        <HelpResources />
       </Card>
     );
   }
@@ -217,12 +217,12 @@ export function QuickStart({setupState, isLoading}: QuickStartProps) {
   // If core setup is complete and they're actively sending, show success message
   if (setupState.hasVerifiedDomain && hasContacts && hasSentCampaign && hasRecentCampaign) {
     return (
-      <Card>
+      <Card className="flex flex-col h-full">
         <CardHeader>
           <CardTitle>Quick Start</CardTitle>
           <CardDescription>Your project is fully set up</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex-1 min-h-0 overflow-y-auto">
           <div className="flex items-start gap-4 p-4 bg-green-50 rounded-lg border border-green-200">
             <div className="h-10 w-10 rounded-lg bg-green-100 border border-green-200 flex items-center justify-center flex-shrink-0">
               <CheckCircle2 className="h-5 w-5 text-green-700" />
@@ -230,13 +230,12 @@ export function QuickStart({setupState, isLoading}: QuickStartProps) {
             <div className="flex-1 pt-0.5">
               <p className="text-sm font-semibold text-green-900 mb-1">All set!</p>
               <p className="text-xs text-green-700 leading-relaxed">
-                Your project is fully configured and you&apos;re actively engaging your audience. Keep up the great
-                work!
+                Domain verified, contacts imported, campaigns running. Everything is set up correctly.
               </p>
             </div>
           </div>
-          <HelpResources />
         </CardContent>
+        <HelpResources />
       </Card>
     );
   }
@@ -245,14 +244,14 @@ export function QuickStart({setupState, isLoading}: QuickStartProps) {
   const visibleSteps = allSteps.slice(0, 3);
 
   return (
-    <Card>
+    <Card className="flex flex-col h-full">
       <CardHeader>
         <CardTitle>Quick Start</CardTitle>
         <CardDescription>
           {visibleSteps.length === 0 ? 'Your project is set up' : 'Get started with Plunk in minutes'}
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex-1 min-h-0 overflow-y-auto">
         <div className="space-y-3">
           {visibleSteps.map(step => {
             const Icon = step.icon;
@@ -275,17 +274,15 @@ export function QuickStart({setupState, isLoading}: QuickStartProps) {
                   </div>
                   <p className="text-xs text-neutral-600 leading-relaxed">{step.description}</p>
                 </div>
-                <Link href={step.link} className="flex-shrink-0">
-                  <Button size="sm" variant={step.isCompleted ? 'outline' : 'default'}>
-                    {step.linkText}
-                  </Button>
-                </Link>
+                <Button asChild size="sm" variant={step.isCompleted ? 'outline' : 'default'} className="flex-shrink-0">
+                  <Link href={step.link}>{step.linkText}</Link>
+                </Button>
               </div>
             );
           })}
         </div>
-        <HelpResources />
       </CardContent>
+      <HelpResources />
     </Card>
   );
 }

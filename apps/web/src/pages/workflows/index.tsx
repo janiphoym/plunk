@@ -3,9 +3,6 @@ import {
   Button,
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
   Command,
   CommandGroup,
   CommandItem,
@@ -16,18 +13,20 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  IconSpinner,
   Input,
   Label,
 } from '@plunk/ui';
 import type {Workflow} from '@plunk/db';
 import type {PaginatedResponse} from '@plunk/types';
+import {EmptyState} from '@plunk/ui';
 import {DashboardLayout} from '../../components/DashboardLayout';
 import {network} from '../../lib/network';
 import {formatRelativeTime} from '../../lib/dateUtils';
-import {Calendar, Edit, Plus, Power, PowerOff, Search, Trash2, Workflow as WorkflowIcon} from 'lucide-react';
+import {Calendar, Copy, Edit, Plus, Power, PowerOff, Search, Trash2, Workflow as WorkflowIcon, X, Zap} from 'lucide-react';
 import {NextSeo} from 'next-seo';
 import Link from 'next/link';
-import {useState} from 'react';
+import {useEffect, useState} from 'react';
 import {toast} from 'sonner';
 import useSWR from 'swr';
 import {WorkflowSchemas} from '@plunk/shared';
@@ -45,11 +44,13 @@ export default function WorkflowsPage() {
     PaginatedResponse<Workflow & {_count?: {steps: number; executions: number}}>
   >(`/workflows?page=${page}&pageSize=20${search ? `&search=${search}` : ''}`, {revalidateOnFocus: false});
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    setSearch(searchInput);
-    setPage(1);
-  };
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(searchInput);
+      setPage(1);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   const handleDelete = async () => {
     if (!workflowToDelete) return;
@@ -62,6 +63,16 @@ export default function WorkflowsPage() {
       toast.error(error instanceof Error ? error.message : 'Failed to delete workflow');
     } finally {
       setWorkflowToDelete(null);
+    }
+  };
+
+  const handleDuplicate = async (workflowId: string) => {
+    try {
+      await network.fetch('POST', `/workflows/${workflowId}/duplicate`);
+      toast.success('Workflow duplicated successfully');
+      void mutate();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to duplicate workflow');
     }
   };
 
@@ -98,130 +109,138 @@ export default function WorkflowsPage() {
             </Button>
           </div>
 
-          {/* Search & Filters */}
-          <Card>
-            <CardContent className="pt-6">
-              <form onSubmit={handleSearch} className="flex gap-2">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-500" />
-                  <Input
-                    type="text"
-                    placeholder="Search workflows..."
-                    value={searchInput}
-                    onChange={e => setSearchInput(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                <Button type="submit">Search</Button>
-                {search && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setSearch('');
-                      setSearchInput('');
-                      setPage(1);
-                    }}
-                  >
-                    Clear
-                  </Button>
-                )}
-              </form>
-            </CardContent>
-          </Card>
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
+            <Input
+              type="text"
+              placeholder="Search workflows..."
+              value={searchInput}
+              onChange={e => setSearchInput(e.target.value)}
+              className="pl-10 pr-10"
+            />
+            {searchInput && (
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => {
+                  setSearchInput('');
+                  setSearch('');
+                  setPage(1);
+                }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
 
-          {/* Workflows Grid */}
-          <div className="grid gap-4">
+          {/* Workflows */}
+          <div>
             {isLoading ? (
               <Card>
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-center py-12">
-                    <div className="text-center">
-                      <svg
-                        className="h-8 w-8 animate-spin mx-auto text-neutral-900"
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                      >
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        />
-                      </svg>
-                      <p className="mt-2 text-sm text-neutral-500">Loading workflows...</p>
-                    </div>
+                    <IconSpinner />
                   </div>
                 </CardContent>
               </Card>
             ) : data?.data.length === 0 ? (
               <Card>
-                <CardContent className="pt-6">
-                  <div className="text-center py-12">
-                    <WorkflowIcon className="h-12 w-12 text-neutral-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-neutral-900 mb-2">No workflows found</h3>
-                    <p className="text-neutral-500 mb-6">
-                      {search ? 'Try adjusting your search terms' : 'Get started by creating your first workflow'}
-                    </p>
-                    {!search && (
-                      <Button onClick={() => setShowCreateDialog(true)}>
-                        <Plus className="h-4 w-4" />
-                        Create Workflow
-                      </Button>
-                    )}
-                  </div>
+                <CardContent>
+                  <EmptyState
+                    icon={WorkflowIcon}
+                    title={search ? 'No workflows match' : 'No workflows yet'}
+                    description={search ? 'Try a different search term.' : 'Automate emails triggered by contact events.'}
+                    action={
+                      !search ? (
+                        <Button onClick={() => setShowCreateDialog(true)}>
+                          <Plus className="h-4 w-4" />
+                          Create Workflow
+                        </Button>
+                      ) : undefined
+                    }
+                  />
                 </CardContent>
               </Card>
             ) : (
               <>
-                {data?.data.map(workflow => (
-                  <Card key={workflow.id} className={workflow.enabled ? 'border-green-200' : ''}>
-                    <CardHeader>
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3">
-                            <CardTitle>{workflow.name}</CardTitle>
-                            <Badge variant={workflow.enabled ? 'green' : 'neutral'}>
-                              {workflow.enabled ? (
-                                <>
-                                  <Power className="h-3 w-3 mr-1" />
-                                  Active
-                                </>
-                              ) : (
-                                <>
-                                  <PowerOff className="h-3 w-3 mr-1" />
-                                  Disabled
-                                </>
-                              )}
-                            </Badge>
-
-                            {workflow.triggerConfig &&
-                              typeof workflow.triggerConfig === 'object' &&
-                              'eventName' in workflow.triggerConfig && (
-                                <Badge variant={'info'}>{String(workflow.triggerConfig.eventName)}</Badge>
-                              )}
-                          </div>
-                          {workflow.description && (
-                            <CardDescription className="mt-2">{workflow.description}</CardDescription>
-                          )}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {data?.data.map(workflow => (
+                    <Card key={workflow.id} className="transition-colors hover:border-neutral-300 flex flex-col [&:has([data-card-link]:focus-visible)]:ring-2 [&:has([data-card-link]:focus-visible)]:ring-ring [&:has([data-card-link]:focus-visible)]:ring-offset-2">
+                      <Link
+                        href={`/workflows/${workflow.id}`}
+                        data-card-link=""
+                        className="flex-1 block p-6 pb-4 hover:bg-neutral-50/50 transition-colors rounded-t-xl focus-visible:outline-none"
+                        aria-label={`Open ${workflow.name}`}
+                      >
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                          <h3 className="font-semibold text-neutral-900 leading-snug">{workflow.name}</h3>
+                          <Badge variant={workflow.enabled ? 'success' : 'neutral'} className="shrink-0 mt-0.5">
+                            {workflow.enabled ? (
+                              <><Power className="h-3 w-3 mr-1" />Active</>
+                            ) : (
+                              <><PowerOff className="h-3 w-3 mr-1" />Disabled</>
+                            )}
+                          </Badge>
                         </div>
-                        <div className="flex items-center gap-2 ml-4">
+                        {workflow.triggerConfig &&
+                          typeof workflow.triggerConfig === 'object' &&
+                          'eventName' in workflow.triggerConfig && (
+                            <div className="flex items-center gap-1.5 text-xs text-neutral-500 mb-3">
+                              <Zap className="h-3 w-3 shrink-0" />
+                              <span>Triggers on</span>
+                              <code className="font-mono bg-neutral-100 px-1.5 py-0.5 rounded text-neutral-700">
+                                {String(workflow.triggerConfig.eventName)}
+                              </code>
+                            </div>
+                          )}
+                        <div className="flex items-center gap-4 text-sm">
+                          <span>
+                            <strong className="font-semibold text-neutral-900">{workflow._count?.steps ?? 0}</strong>
+                            <span className="text-neutral-400 ml-1 text-xs">steps</span>
+                          </span>
+                          <span className="h-3 w-px bg-neutral-200" />
+                          <span>
+                            <strong className="font-semibold text-neutral-900">{workflow._count?.executions ?? 0}</strong>
+                            <span className="text-neutral-400 ml-1 text-xs">executions</span>
+                          </span>
+                        </div>
+                      </Link>
+                      <div className="px-6 py-3 border-t border-neutral-100 flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 text-xs text-neutral-400">
+                          <Calendar className="h-3 w-3" />
+                          <div className="group relative inline-block cursor-help">
+                            <span>Updated {formatRelativeTime(workflow.updatedAt)}</span>
+                            <div className="hidden group-hover:block absolute z-10 w-48 p-2 bg-neutral-900 text-white text-xs rounded shadow-md bottom-full left-0 mb-1 whitespace-nowrap">
+                              {dayjs(workflow.updatedAt).format('DD MMMM YYYY, hh:mm')}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
                           <Button
                             variant="ghost"
                             size="sm"
+                            title={workflow.enabled ? 'Disable workflow' : 'Enable workflow'}
                             onClick={() => handleToggleEnabled(workflow.id, workflow.enabled)}
                           >
                             {workflow.enabled ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}
                           </Button>
-                          <Link href={`/workflows/${workflow.id}`}>
-                            <Button variant="ghost" size="sm">
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                          </Link>
+                          <Button asChild variant="ghost" size="sm" title="Edit workflow">
+                            <Link href={`/workflows/${workflow.id}`} aria-label="Edit workflow"><Edit className="h-4 w-4" /></Link>
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"
+                            title="Duplicate workflow"
+                            onClick={() => handleDuplicate(workflow.id)}
+                          >
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="Delete workflow"
                             onClick={() => {
                               setWorkflowToDelete(workflow.id);
                               setShowDeleteDialog(true);
@@ -231,37 +250,9 @@ export default function WorkflowsPage() {
                           </Button>
                         </div>
                       </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="flex items-center gap-6 text-sm text-neutral-500">
-                        <div>
-                          <span className="font-medium text-neutral-900">{workflow._count?.steps ?? 0}</span> steps
-                        </div>
-                        <div>
-                          <span className="font-medium text-neutral-900">{workflow._count?.executions ?? 0}</span>{' '}
-                          executions
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4 text-xs text-neutral-500 pt-3 border-t border-neutral-100">
-                        <div className="flex items-center gap-1.5">
-                          <Calendar className="h-3 w-3" />
-                          <div className="group relative inline-block cursor-help">
-                            <span>Created {formatRelativeTime(workflow.createdAt)}</span>
-                            <div className="hidden group-hover:block absolute z-10 w-48 p-2 bg-neutral-900 text-white text-xs rounded shadow-lg bottom-full left-0 mb-1 whitespace-nowrap">
-                              {dayjs(workflow.createdAt).format('DD MMMM YYYY, hh:mm')}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="group relative inline-block cursor-help">
-                          <span>• Updated {formatRelativeTime(workflow.updatedAt)}</span>
-                          <div className="hidden group-hover:block absolute z-10 w-48 p-2 bg-neutral-900 text-white text-xs rounded shadow-lg bottom-full left-0 mb-1 whitespace-nowrap">
-                            {dayjs(workflow.updatedAt).format('DD MMMM YYYY, hh:mm')}
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                    </Card>
+                  ))}
+                </div>
 
                 {/* Pagination */}
                 {data && data.totalPages > 1 && (
@@ -366,7 +357,7 @@ function CreateWorkflowDialog({open, onOpenChange, onSuccess}: CreateWorkflowDia
           <DialogTitle>Create New Workflow</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
+          <div className="space-y-1.5">
             <Label htmlFor="name">Name *</Label>
             <Input
               id="name"
@@ -378,19 +369,19 @@ function CreateWorkflowDialog({open, onOpenChange, onSuccess}: CreateWorkflowDia
             />
           </div>
 
-          <div>
+          <div className="space-y-1.5">
             <Label htmlFor="description">Description</Label>
             <textarea
               id="description"
               value={description}
               onChange={e => setDescription(e.target.value)}
               placeholder="Send a series of welcome emails to new subscribers"
-              className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm"
+              className="w-full px-3 py-2 border border-neutral-200 rounded-md text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               rows={3}
             />
           </div>
 
-          <div>
+          <div className="space-y-1.5">
             <Label htmlFor="createEventName">Trigger Event *</Label>
             {/* Combobox: 可自由輸入 event name，同時提供已追蹤 event 的下拉建議 */}
             <div className="relative">
@@ -453,21 +444,20 @@ function CreateWorkflowDialog({open, onOpenChange, onSuccess}: CreateWorkflowDia
             </p>
           </div>
 
-          <div className="flex items-start gap-3 p-4 bg-neutral-50 rounded-lg border border-neutral-200">
+          <div className="flex items-start gap-3">
             <input
               id="allowReentry"
               type="checkbox"
               checked={allowReentry}
               onChange={e => setAllowReentry(e.target.checked)}
-              className="mt-1 h-4 w-4 text-neutral-900 focus:ring-neutral-900 border-neutral-300 rounded"
+              className="mt-0.5 h-4 w-4 text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 border-neutral-300 rounded"
             />
             <div className="flex-1">
               <Label htmlFor="allowReentry" className="font-medium cursor-pointer">
                 Allow Re-entry
               </Label>
-              <p className="text-xs text-neutral-500 mt-1">
-                When enabled, contacts can enter this workflow multiple times. When disabled, contacts can only enter
-                once, ever.
+              <p className="text-xs text-neutral-500 mt-0.5">
+                When enabled, contacts can enter this workflow multiple times.
               </p>
             </div>
           </div>

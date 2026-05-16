@@ -3,11 +3,12 @@ import {DomainSchemas, UtilitySchemas} from '@plunk/shared';
 import type {NextFunction, Request, Response} from 'express';
 
 import {redis} from '../database/redis.js';
-import {NotFound} from '../exceptions/index.js';
+import {NotAllowed, NotFound} from '../exceptions/index.js';
 import {isAuthenticated, requireEmailVerified} from '../middleware/auth.js';
 import {DomainService} from '../services/DomainService.js';
 import {Keys} from '../services/keys.js';
 import {MembershipService} from '../services/MembershipService.js';
+import {SecurityService} from '../services/SecurityService.js';
 import {CatchAsync} from '../utils/asyncHandler.js';
 
 @Controller('domains')
@@ -46,6 +47,22 @@ export class Domains {
 
     // Verify user has admin access to this project
     await MembershipService.requireAdminAccess(auth.userId!, projectId);
+
+    // Block domain changes on disabled projects
+    const isDisabled = await SecurityService.isProjectDisabled(projectId);
+    if (isDisabled) {
+      throw new NotAllowed(
+        'This project has been disabled. Please contact support for assistance.',
+      );
+    }
+
+    // Block subdomains whose root domain belongs to a disabled project
+    const rootCheck = await DomainService.checkSubdomainOfDisabledRoot(domain);
+    if (rootCheck.blocked) {
+      throw new NotAllowed(
+        'This domain cannot be added at this time. Please contact support for assistance.',
+      );
+    }
 
     // Check if domain is already linked to another project
     const ownershipCheck = await DomainService.checkDomainOwnership(domain, auth.userId);
@@ -124,6 +141,14 @@ export class Domains {
 
     // Verify user has admin access to the project this domain belongs to
     await MembershipService.requireAdminAccess(auth.userId!, domain.projectId);
+
+    // Block domain changes on disabled projects
+    const isDisabled = await SecurityService.isProjectDisabled(domain.projectId);
+    if (isDisabled) {
+      throw new NotAllowed(
+        'This project has been disabled. Please contact support for assistance.',
+      );
+    }
 
     await DomainService.removeDomain(id);
 

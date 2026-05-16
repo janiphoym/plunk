@@ -61,12 +61,27 @@ export const AuthenticationSchemas = {
   }),
 } as const;
 
+// Zero-width / bidi / formatting characters that render invisibly and aren't normalized away by NFKC.
+const invisibleCharRegex =
+  /[\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180B-\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\u3164\uFEFF\uFFA0]/u;
+
+const projectName = z
+  .string()
+  .min(1)
+  .max(100)
+  .refine(val => !invisibleCharRegex.test(val), {
+    message: 'Name contains invisible or formatting characters',
+  })
+  .refine(val => val.normalize('NFC') === val.normalize('NFKC'), {
+    message: 'Name contains decorative or look-alike characters. Use plain letters and numbers.',
+  });
+
 export const ProjectSchemas = {
   create: z.object({
-    name: z.string().min(1).max(100),
+    name: projectName,
   }),
   update: z.object({
-    name: z.string().min(1).max(100).optional(),
+    name: projectName.optional(),
     tracking: z.nativeEnum(TrackingMode).optional(),
     language: z
       .string()
@@ -81,8 +96,23 @@ export const ContactSchemas = {
     subscribed: z.boolean().default(true),
     data: jsonSchema.optional(),
   }),
-  bulkAction: z.object({
-    contactIds: z.array(uuid).min(1).max(1000),
+  bulkAction: z.discriminatedUnion('mode', [
+    z.object({
+      mode: z.literal('ids'),
+      contactIds: z.array(uuid).min(1).max(1000),
+    }),
+    z.object({
+      mode: z.literal('query'),
+      filter: z
+        .object({
+          search: z.string().max(255).optional(),
+        })
+        .default({}),
+      excludeIds: z.array(uuid).max(10000).optional(),
+    }),
+  ]),
+  lookup: z.object({
+    emails: z.array(z.string().email()).min(1).max(500),
   }),
 } as const;
 
@@ -105,6 +135,9 @@ const segmentFilterSchema = z.object({
     'triggeredWithin',
     'triggeredOlderThan',
     'notTriggered',
+    'notTriggeredWithin',
+    'memberOfSegment',
+    'notMemberOfSegment',
   ]),
   value: z.any().optional(),
   unit: z.enum(['days', 'hours', 'minutes']).optional(),
@@ -144,6 +177,8 @@ export const SegmentSchemas = {
   }),
   members: z.object({
     emails: z.array(z.string().email()).min(1).max(500),
+    createMissing: z.boolean().optional(),
+    subscribed: z.boolean().optional(),
   }),
 };
 
@@ -311,9 +346,17 @@ export const WorkflowStepConfigSchemas = {
     headers: z.record(z.string()).optional(),
     body: jsonSchema.optional(),
   }),
-  updateContact: z.object({
-    updates: z.record(z.any()),
-  }),
+  updateContact: z
+    .object({
+      updates: z.record(z.any()).optional(),
+      subscriptionAction: z.enum(['none', 'subscribe', 'unsubscribe']).optional(),
+    })
+    .refine(
+      value =>
+        (value.updates && Object.keys(value.updates).length > 0) ||
+        (value.subscriptionAction && value.subscriptionAction !== 'none'),
+      {message: 'Provide at least one field to update or a subscription action'},
+    ),
 };
 
 export const DomainSchemas = {
@@ -456,7 +499,7 @@ export const ActionSchemas = {
               path: ['contentId'],
             }),
         )
-        .max(10) // Maximum 10 attachments per email
+        .max(Number(process.env['MAX_ATTACHMENTS_COUNT'] ?? 10))
         .optional(),
     })
     .superRefine((data, ctx) => {
@@ -471,12 +514,13 @@ export const ActionSchemas = {
 
       // Validate total attachment size
       if (data.attachments && data.attachments.length > 0) {
+        const maxSizeMb = Number(process.env['MAX_ATTACHMENT_SIZE_MB'] ?? 10);
+        const maxBase64Length = Math.floor((maxSizeMb * 1024 * 1024 * 4) / 3);
         const totalBase64Length = data.attachments.reduce((sum, att) => sum + att.content.length, 0);
-        if (totalBase64Length > 13333333) {
-          // ~10MB limit
+        if (totalBase64Length > maxBase64Length) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
-            message: 'Total attachment size must not exceed 10MB',
+            message: `Total attachment size must not exceed ${maxSizeMb}MB`,
             path: ['attachments'],
           });
         }

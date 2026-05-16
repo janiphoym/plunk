@@ -1,5 +1,6 @@
 import Image from 'next/image';
 import Link from 'next/link';
+import {useRouter} from 'next/router';
 import {WIKI_URI} from '../../lib/constants';
 import logo from '../../../public/assets/logo.svg';
 
@@ -7,10 +8,14 @@ import logo from '../../../public/assets/logo.svg';
  *
  */
 export default function Footer() {
+  const router = useRouter();
+  const path = (router.asPath || '/').split(/[?#]/)[0] ?? '/';
+  const trimmed = path === '/' ? '/' : path.replace(/\/$/, '');
+  const mdHref = `${trimmed}.md`;
   return (
     <>
       <footer className={'border-t border-neutral-200 bg-white'}>
-        <div className="mx-auto max-w-7xl px-8 py-20 xl:px-0">
+        <div className="mx-auto max-w-[88rem] px-6 py-20 sm:px-10">
           <div className="grid gap-12 lg:grid-cols-12">
             {/* Logo and description */}
             <div className="space-y-6 lg:col-span-3">
@@ -59,7 +64,7 @@ export default function Footer() {
             {/* Links */}
             <div className="grid grid-cols-2 gap-8 lg:col-span-9 lg:grid-cols-5">
               <div>
-                <h3 className="text-sm font-semibold text-neutral-900">Product</h3>
+                <h3 style={{fontFamily: 'var(--font-mono)'}} className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-500">Product</h3>
                 <ul role="list" className="mt-6 space-y-4">
                   <li>
                     <Link href={'/pricing'} className="text-sm text-neutral-600 transition hover:text-neutral-900">
@@ -87,10 +92,29 @@ export default function Footer() {
                     </Link>
                   </li>
                 </ul>
+
+                <h3 style={{fontFamily: 'var(--font-mono)'}} className="mt-8 text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-500">Checkers</h3>
+                <ul role="list" className="mt-6 space-y-4">
+                  <li>
+                    <Link href={'/tools/spf-checker'} className="text-sm text-neutral-600 transition hover:text-neutral-900">
+                      SPF checker
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href={'/tools/dmarc-checker'} className="text-sm text-neutral-600 transition hover:text-neutral-900">
+                      DMARC checker
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href={'/tools/dkim-checker'} className="text-sm text-neutral-600 transition hover:text-neutral-900">
+                      DKIM checker
+                    </Link>
+                  </li>
+                </ul>
               </div>
 
               <div>
-                <h3 className="text-sm font-semibold text-neutral-900">Features</h3>
+                <h3 style={{fontFamily: 'var(--font-mono)'}} className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-500">Features</h3>
                 <ul role="list" className="mt-6 space-y-4">
                   <li>
                     <Link href={'/features/email-editor'} className="text-sm text-neutral-600 transition hover:text-neutral-900">
@@ -121,7 +145,7 @@ export default function Footer() {
               </div>
 
               <div>
-                <h3 className="text-sm font-semibold text-neutral-900">Compare</h3>
+                <h3 style={{fontFamily: 'var(--font-mono)'}} className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-500">Compare</h3>
                 <ul role="list" className="mt-6 space-y-4">
                   <li>
                     <Link href={'/vs'} className="text-sm text-neutral-600 transition hover:text-neutral-900">
@@ -162,7 +186,7 @@ export default function Footer() {
               </div>
 
               <div>
-                <h3 className="text-sm font-semibold text-neutral-900">Community</h3>
+                <h3 style={{fontFamily: 'var(--font-mono)'}} className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-500">Community</h3>
                 <ul role="list" className="mt-6 space-y-4">
                   <li>
                     <Link href={'/discord'} className="text-sm text-neutral-600 transition hover:text-neutral-900">
@@ -181,7 +205,7 @@ export default function Footer() {
                   </li>
                 </ul>
 
-                <h3 className="mt-8 text-sm font-semibold text-neutral-900">Legal</h3>
+                <h3 style={{fontFamily: 'var(--font-mono)'}} className="mt-8 text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-500">Legal</h3>
                 <ul role="list" className="mt-6 space-y-4">
                   <li>
                     <Link href={'/privacy'} className="text-sm text-neutral-600 transition hover:text-neutral-900">
@@ -202,7 +226,7 @@ export default function Footer() {
               </div>
 
               <div>
-                <h3 className="text-sm font-semibold text-neutral-900">Guides</h3>
+                <h3 style={{fontFamily: 'var(--font-mono)'}} className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-500">Guides</h3>
                 <ul role="list" className="mt-6 space-y-4">
                   <li>
                     <Link href={'/guides/email-deliverability'} className="text-sm text-neutral-600 transition hover:text-neutral-900">
@@ -244,8 +268,15 @@ export default function Footer() {
             </div>
           </div>
 
-          <div className="mt-16 border-t border-neutral-200 pt-8">
+          <div className="mt-16 flex flex-col gap-2 border-t border-neutral-200 pt-8 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-neutral-500">&copy; {new Date().getFullYear()} Plunk. All rights reserved.</p>
+            <p style={{fontFamily: 'var(--font-mono)'}} className="text-[11px] text-neutral-400">
+              Reading this with electronic eyes? Append{' '}
+              <a href={mdHref} className="text-neutral-500 underline decoration-dotted underline-offset-2 transition hover:text-neutral-900">
+                <code>.md</code>
+              </a>{' '}
+              to any URL for the Markdown cut.
+            </p>
           </div>
         </div>
       </footer>

@@ -14,14 +14,16 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  EmptyState,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
+  IconSpinner,
 } from '@plunk/ui';
-import {AlertCircle, Loader2, Trash2} from 'lucide-react';
+import {AlertCircle, Database, Trash2, Zap} from 'lucide-react';
 import {toast} from 'sonner';
 import useSWR from 'swr';
 import {useActiveProject} from '../lib/contexts/ActiveProjectProvider';
@@ -151,7 +153,11 @@ export function DataManagementSettings() {
         </CardHeader>
         <CardContent>
           {customFields.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No custom fields found</p>
+            <EmptyState
+              icon={Database}
+              title="No custom fields"
+              description="Custom fields appear here once contacts have data properties set via the API."
+            />
           ) : (
             <Table>
               <TableHeader>
@@ -170,7 +176,7 @@ export function DataManagementSettings() {
                       <Badge variant="secondary">{field.type}</Badge>
                     </TableCell>
                     <TableCell>
-                      <span className="text-sm text-muted-foreground">{field.coverage}%</span>
+                      <span className="text-sm text-neutral-500">{field.coverage}%</span>
                     </TableCell>
                     <TableCell className="text-right">
                       <Button variant="ghost" size="sm" onClick={() => openFieldDeleteDialog(field.field)}>
@@ -196,7 +202,11 @@ export function DataManagementSettings() {
         </CardHeader>
         <CardContent>
           {customEvents.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No custom events found</p>
+            <EmptyState
+              icon={Zap}
+              title="No custom events"
+              description="Custom events appear here once your contacts trigger events via the API."
+            />
           ) : (
             <Table>
               <TableHeader>
@@ -336,7 +346,7 @@ export function DataManagementSettings() {
                 isDeleting || (!!selectedField && !fieldUsage?.canDelete) || (!!selectedEvent && !eventUsage?.canDelete)
               }
             >
-              {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {isDeleting && <IconSpinner size="sm" className="mr-2" />}
               Delete
             </Button>
           </DialogFooter>

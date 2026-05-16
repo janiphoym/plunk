@@ -6,6 +6,7 @@ import {
   AWS_SES_REGION,
   AWS_SES_SECRET_ACCESS_KEY,
   DASHBOARD_URI,
+  MAIL_FROM_SUBDOMAIN,
   SES_CONFIGURATION_SET,
   SES_CONFIGURATION_SET_NO_TRACKING,
   TRACKING_TOGGLE_ENABLED,
@@ -133,21 +134,23 @@ export async function sendRawEmail({
     rootContentType = `multipart/related; boundary="${relatedBoundary}"`;
   }
 
+  // Build the additional headers (custom headers + List-Unsubscribe), filtering
+  // out empties so we never emit a blank line inside the header section.
+  // Per RFC 5322 §2.1, a blank line terminates the header section, so any blank
+  // line here would push subsequent headers (notably List-Unsubscribe) into the body.
+  const extraHeaderLines = [
+    ...(headers ? Object.entries(headers).map(([key, value]) => `${key}: ${value}`) : []),
+    ...(unsubscribeHeader ? [unsubscribeHeader] : []),
+  ];
+  const extraHeaders = extraHeaderLines.length > 0 ? `\n${extraHeaderLines.join('\n')}` : '';
+
   // Build raw MIME message
   let rawMessage = `From: ${from.name} <${from.email}>
 To: ${toHeader}
 Reply-To: ${reply || from.email}
 Subject: ${content.subject}
 MIME-Version: 1.0
-Content-Type: ${rootContentType}
-${
-  headers
-    ? Object.entries(headers)
-        .map(([key, value]) => `${key}: ${value}`)
-        .join('\n')
-    : ''
-}
-${unsubscribeHeader}
+Content-Type: ${rootContentType}${extraHeaders}
 
 `;
 
@@ -248,10 +251,13 @@ export const verifyDomain = async (domain: string): Promise<string[]> => {
   // Verify DKIM for the domain
   const DKIM = await ses.verifyDomainDkim({Domain: domain});
 
-  // Set custom MAIL FROM domain (plunk.yourdomain.com)
+  // Set custom MAIL FROM domain. The subdomain defaults to `plunk` and can be
+  // overridden via the MAIL_FROM_SUBDOMAIN env var — useful when `plunk.<domain>`
+  // is already in use for something else (e.g., a CNAME to a CDN), since the
+  // MAIL FROM subdomain needs MX + TXT records that conflict with a CNAME.
   await ses.setIdentityMailFromDomain({
     Identity: domain,
-    MailFromDomain: `plunk.${domain}`,
+    MailFromDomain: `${MAIL_FROM_SUBDOMAIN}.${domain}`,
   });
 
   return DKIM.DkimTokens ?? [];

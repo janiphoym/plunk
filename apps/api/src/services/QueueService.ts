@@ -1,12 +1,15 @@
+import {CampaignStatus, EmailStatus} from '@plunk/db';
 import {type Job, Queue} from 'bullmq';
 import type {RedisOptions} from 'ioredis';
 import signale from 'signale';
 import type {
   ApiRequestCleanupJobData,
   BulkContactActionJobData,
+  BulkContactActionSelector,
   CampaignBatchJobData,
   ContactImportJobData,
   DomainVerificationJobData,
+  MeterEventJobData,
   ScheduledCampaignJobData,
   SegmentCountJobData,
   SendEmailJobData,
@@ -155,6 +158,19 @@ export const bulkContactQueue = new Queue<BulkContactActionJobData>('bulk-contac
     },
     removeOnComplete: 50, // Keep last 50 completed bulk operations
     removeOnFail: 100, // Keep last 100 failed bulk operations
+  },
+});
+
+export const meterQueue = new Queue<MeterEventJobData>('meter', {
+  connection: redisConnection,
+  defaultJobOptions: {
+    attempts: 10,
+    backoff: {
+      type: 'exponential',
+      delay: 5000,
+    },
+    removeOnComplete: 5000,
+    removeOnFail: 10000,
   },
 });
 
@@ -314,16 +330,33 @@ export class QueueService {
   }
 
   /**
+   * Queue a Stripe meter event for reliable delivery with retries
+   */
+  public static async queueMeterEvent(
+    customerId: string,
+    value: number,
+    idempotencyKey?: string,
+  ): Promise<Job<MeterEventJobData>> {
+    return meterQueue.add(
+      'record-meter-event',
+      {customerId, value, idempotencyKey},
+      {
+        jobId: idempotencyKey ? `meter-${idempotencyKey}` : undefined,
+      },
+    );
+  }
+
+  /**
    * Queue bulk contact action job
    */
   public static async queueBulkContactAction(
     projectId: string,
-    contactIds: string[],
+    selector: BulkContactActionSelector,
     operation: 'subscribe' | 'unsubscribe' | 'delete',
   ): Promise<Job<BulkContactActionJobData>> {
     return bulkContactQueue.add(
       'bulk-contact-action',
-      {projectId, contactIds, operation},
+      {projectId, operation, selector},
       {
         jobId: `bulk-${operation}-${projectId}-${Date.now()}`,
       },
@@ -390,6 +423,7 @@ export class QueueService {
       domainVerificationCounts,
       apiRequestCleanupCounts,
       bulkContactCounts,
+      meterCounts,
     ] = await Promise.all([
       emailQueue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed'),
       campaignQueue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed'),
@@ -400,6 +434,7 @@ export class QueueService {
       domainVerificationQueue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed'),
       apiRequestCleanupQueue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed'),
       bulkContactQueue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed'),
+      meterQueue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed'),
     ]);
 
     return {
@@ -412,6 +447,7 @@ export class QueueService {
       domainVerification: domainVerificationCounts,
       apiRequestCleanup: apiRequestCleanupCounts,
       bulkContact: bulkContactCounts,
+      meter: meterCounts,
     };
   }
 
@@ -429,6 +465,7 @@ export class QueueService {
       domainVerificationQueue.pause(),
       apiRequestCleanupQueue.pause(),
       bulkContactQueue.pause(),
+      meterQueue.pause(),
     ]);
   }
 
@@ -446,6 +483,7 @@ export class QueueService {
       domainVerificationQueue.resume(),
       apiRequestCleanupQueue.resume(),
       bulkContactQueue.resume(),
+      meterQueue.resume(),
     ]);
   }
 
@@ -472,6 +510,8 @@ export class QueueService {
       domainVerificationQueue.clean(gracePeriod * 7, 50, 'failed'),
       bulkContactQueue.clean(gracePeriod, 50, 'completed'),
       bulkContactQueue.clean(gracePeriod * 7, 100, 'failed'),
+      meterQueue.clean(gracePeriod * 30, 5000, 'completed'), // Keep 30 days for billing audit
+      meterQueue.clean(gracePeriod * 30, 10000, 'failed'),
     ]);
   }
 
@@ -540,6 +580,39 @@ export class QueueService {
       }
     }
 
+    // Mark every still-PENDING email for this project as FAILED. We just stripped
+    // their queue jobs, so without this they'd sit as PENDING forever and any
+    // campaign waiting on them would stay stuck in SENDING.
+    const failed = await prisma.email.updateMany({
+      where: {projectId, status: EmailStatus.PENDING},
+      data: {status: EmailStatus.FAILED, error: 'Project is disabled'},
+    });
+
+    if (failed.count > 0) {
+      signale.info(`[QUEUE] Marked ${failed.count} pending emails as failed for project ${projectId}`);
+    }
+
+    // Finalize any in-flight campaigns. With the orphaned PENDING emails now FAILED
+    // (terminal), the campaign can move to SENT with a partial sentCount instead of
+    // staying stuck in SENDING. Reconcile totalRecipients first since the batch
+    // chain may have been cut short.
+    const sendingCampaigns = await prisma.campaign.findMany({
+      where: {projectId, status: CampaignStatus.SENDING},
+      select: {id: true},
+    });
+
+    if (sendingCampaigns.length > 0) {
+      const {CampaignService} = await import('./CampaignService.js');
+      for (const campaign of sendingCampaigns) {
+        const actualEmailCount = await prisma.email.count({where: {campaignId: campaign.id}});
+        await prisma.campaign.update({
+          where: {id: campaign.id},
+          data: {totalRecipients: actualEmailCount},
+        });
+        await CampaignService.finalizeIfDone(campaign.id);
+      }
+    }
+
     signale.info(`[QUEUE] Finished cancelling jobs for project ${projectId}`);
   }
 
@@ -557,6 +630,7 @@ export class QueueService {
       domainVerificationQueue.close(),
       apiRequestCleanupQueue.close(),
       bulkContactQueue.close(),
+      meterQueue.close(),
     ]);
   }
 }

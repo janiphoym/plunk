@@ -11,18 +11,48 @@ import {
   CardHeader,
   CardTitle,
   ConfirmDialog,
+  EmptyState,
   Form,
   FormControl,
   FormField,
   FormItem,
   FormLabel,
   FormMessage,
+  IconSpinner,
   Input,
 } from '@plunk/ui';
 import {AnimatePresence, motion} from 'framer-motion';
-import {Check, CheckCircle2, ChevronDown, Copy, Loader2, RefreshCw, Trash2, XCircle} from 'lucide-react';
+import {Check, CheckCircle2, ChevronDown, Copy, Globe, RefreshCw, Trash2, XCircle} from 'lucide-react';
 import {useConfig} from '../lib/hooks/useConfig';
 import {useAddDomain, useCheckDomainVerification, useDomains, useRemoveDomain} from '../lib/hooks/useDomains';
+
+function AnimatedCopyIcon({isCopied}: {isCopied: boolean}) {
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      {isCopied ? (
+        <motion.span
+          key="copied"
+          initial={{opacity: 0, y: 4}}
+          animate={{opacity: 1, y: 0}}
+          exit={{opacity: 0, y: -4}}
+          transition={{duration: 0.15}}
+        >
+          <Check className="h-3 w-3 text-green-600" />
+        </motion.span>
+      ) : (
+        <motion.span
+          key="idle"
+          initial={{opacity: 0, y: 4}}
+          animate={{opacity: 1, y: 0}}
+          exit={{opacity: 0, y: -4}}
+          transition={{duration: 0.15}}
+        >
+          <Copy className="h-3 w-3" />
+        </motion.span>
+      )}
+    </AnimatePresence>
+  );
+}
 
 interface DomainsSettingsProps {
   projectId: string;
@@ -293,16 +323,20 @@ export function DomainsSettings({projectId}: DomainsSettingsProps) {
         <CardContent>
           {isLoading ? (
             <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-neutral-400" />
+              <IconSpinner />
             </div>
           ) : !domains || domains.length === 0 ? (
-            <div className="text-center py-8 text-neutral-500">
-              <p>No domains added yet</p>
-            </div>
+            <EmptyState
+              icon={Globe}
+              title="No domains added"
+              description="Add a custom domain above to send emails from your own address."
+            />
           ) : (
             <div className="space-y-4">
               {domains.map(domain => {
                 const status = getDomainStatus(domain);
+                const mailFromSubdomain = config?.aws?.mailFromSubdomain ?? 'plunk';
+                const mailFromHost = `${mailFromSubdomain}.${domain.domain}`;
                 return (
                   <div key={domain.id} className="border border-neutral-200 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-3">
@@ -329,7 +363,7 @@ export function DomainsSettings({projectId}: DomainsSettingsProps) {
                           className="min-w-[80px]"
                         >
                           {checkingVerification === domain.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
+                            <IconSpinner size="sm" />
                           ) : (cooldownSeconds[domain.id] ?? 0) > 0 ? (
                             <span className="text-xs">{cooldownSeconds[domain.id]}s</span>
                           ) : (
@@ -337,13 +371,12 @@ export function DomainsSettings({projectId}: DomainsSettingsProps) {
                           )}
                         </Button>
                         <Button
-                          variant="ghost"
+                          variant="destructiveGhost"
                           size="sm"
                           onClick={() => {
                             setDomainToRemove({id: domain.id, name: domain.domain});
                             setShowRemoveDialog(true);
                           }}
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -419,14 +452,13 @@ export function DomainsSettings({projectId}: DomainsSettingsProps) {
                                               onClick={() =>
                                                 handleCopyToken(`${token}._domainkey.${domain.domain}`, index + 2000)
                                               }
-                                              className="shrink-0 h-6 w-6 p-0"
+                                              className="shrink-0 h-6 w-6 p-0 overflow-hidden"
                                             >
-                                              {copiedToken ===
-                                              `${token}._domainkey.${domain.domain}-${index + 2000}` ? (
-                                                <Check className="h-3 w-3 text-green-600" />
-                                              ) : (
-                                                <Copy className="h-3 w-3" />
-                                              )}
+                                              <AnimatedCopyIcon
+                                                isCopied={
+                                                  copiedToken === `${token}._domainkey.${domain.domain}-${index + 2000}`
+                                                }
+                                              />
                                             </Button>
                                           </div>
                                         </td>
@@ -439,13 +471,11 @@ export function DomainsSettings({projectId}: DomainsSettingsProps) {
                                               variant="ghost"
                                               size="sm"
                                               onClick={() => handleCopyToken(`${token}.dkim.amazonses.com`, index)}
-                                              className="shrink-0 h-6 w-6 p-0"
+                                              className="shrink-0 h-6 w-6 p-0 overflow-hidden"
                                             >
-                                              {copiedToken === `${token}.dkim.amazonses.com-${index}` ? (
-                                                <Check className="h-3 w-3 text-green-600" />
-                                              ) : (
-                                                <Copy className="h-3 w-3" />
-                                              )}
+                                              <AnimatedCopyIcon
+                                                isCopied={copiedToken === `${token}.dkim.amazonses.com-${index}`}
+                                              />
                                             </Button>
                                           </div>
                                         </td>
@@ -466,8 +496,8 @@ export function DomainsSettings({projectId}: DomainsSettingsProps) {
                                   </Badge>
                                 </div>
                                 <p className="text-xs text-neutral-600 mb-2">
-                                  Set up a custom MAIL FROM domain (plunk.{domain.domain}) to improve deliverability and
-                                  handle bounces/complaints.
+                                  Set up a custom MAIL FROM domain ({mailFromHost}) to improve deliverability and handle
+                                  bounces/complaints.
                                 </p>
 
                                 <div className="overflow-x-auto">
@@ -494,19 +524,17 @@ export function DomainsSettings({projectId}: DomainsSettingsProps) {
                                         <td className="py-3 px-3">
                                           <div className="flex items-center gap-2">
                                             <code className="text-xs font-mono text-neutral-700 break-all flex-1">
-                                              plunk.{domain.domain}
+                                              {mailFromHost}
                                             </code>
                                             <Button
                                               variant="ghost"
                                               size="sm"
-                                              onClick={() => handleCopyToken(`plunk.${domain.domain}`, 3000)}
-                                              className="shrink-0 h-6 w-6 p-0"
+                                              onClick={() => handleCopyToken(mailFromHost, 3000)}
+                                              className="shrink-0 h-6 w-6 p-0 overflow-hidden"
                                             >
-                                              {copiedToken === `plunk.${domain.domain}-3000` ? (
-                                                <Check className="h-3 w-3 text-green-600" />
-                                              ) : (
-                                                <Copy className="h-3 w-3" />
-                                              )}
+                                              <AnimatedCopyIcon
+                                                isCopied={copiedToken === `${mailFromHost}-3000`}
+                                              />
                                             </Button>
                                           </div>
                                         </td>
@@ -524,14 +552,14 @@ export function DomainsSettings({projectId}: DomainsSettingsProps) {
                                                   1000,
                                                 )
                                               }
-                                              className="shrink-0 h-6 w-6 p-0"
+                                              className="shrink-0 h-6 w-6 p-0 overflow-hidden"
                                             >
-                                              {copiedToken ===
-                                              `10 feedback-smtp.${config.aws.sesRegion}.amazonses.com-1000` ? (
-                                                <Check className="h-3 w-3 text-green-600" />
-                                              ) : (
-                                                <Copy className="h-3 w-3" />
-                                              )}
+                                              <AnimatedCopyIcon
+                                                isCopied={
+                                                  copiedToken ===
+                                                  `10 feedback-smtp.${config.aws.sesRegion}.amazonses.com-1000`
+                                                }
+                                              />
                                             </Button>
                                           </div>
                                         </td>
@@ -545,19 +573,17 @@ export function DomainsSettings({projectId}: DomainsSettingsProps) {
                                         <td className="py-3 px-3">
                                           <div className="flex items-center gap-2">
                                             <code className="text-xs font-mono text-neutral-700 break-all flex-1">
-                                              plunk.{domain.domain}
+                                              {mailFromHost}
                                             </code>
                                             <Button
                                               variant="ghost"
                                               size="sm"
-                                              onClick={() => handleCopyToken(`plunk.${domain.domain}`, 3001)}
-                                              className="shrink-0 h-6 w-6 p-0"
+                                              onClick={() => handleCopyToken(mailFromHost, 3001)}
+                                              className="shrink-0 h-6 w-6 p-0 overflow-hidden"
                                             >
-                                              {copiedToken === `plunk.${domain.domain}-3001` ? (
-                                                <Check className="h-3 w-3 text-green-600" />
-                                              ) : (
-                                                <Copy className="h-3 w-3" />
-                                              )}
+                                              <AnimatedCopyIcon
+                                                isCopied={copiedToken === `${mailFromHost}-3001`}
+                                              />
                                             </Button>
                                           </div>
                                         </td>
@@ -572,13 +598,11 @@ export function DomainsSettings({projectId}: DomainsSettingsProps) {
                                               onClick={() =>
                                                 handleCopyToken('"v=spf1 include:amazonses.com ~all"', 1001)
                                               }
-                                              className="shrink-0 h-6 w-6 p-0"
+                                              className="shrink-0 h-6 w-6 p-0 overflow-hidden"
                                             >
-                                              {copiedToken === '"v=spf1 include:amazonses.com ~all"-1001' ? (
-                                                <Check className="h-3 w-3 text-green-600" />
-                                              ) : (
-                                                <Copy className="h-3 w-3" />
-                                              )}
+                                              <AnimatedCopyIcon
+                                                isCopied={copiedToken === '"v=spf1 include:amazonses.com ~all"-1001'}
+                                              />
                                             </Button>
                                           </div>
                                         </td>
@@ -632,13 +656,9 @@ export function DomainsSettings({projectId}: DomainsSettingsProps) {
                                               variant="ghost"
                                               size="sm"
                                               onClick={() => handleCopyToken(domain.domain, 3002)}
-                                              className="shrink-0 h-6 w-6 p-0"
+                                              className="shrink-0 h-6 w-6 p-0 overflow-hidden"
                                             >
-                                              {copiedToken === `${domain.domain}-3002` ? (
-                                                <Check className="h-3 w-3 text-green-600" />
-                                              ) : (
-                                                <Copy className="h-3 w-3" />
-                                              )}
+                                              <AnimatedCopyIcon isCopied={copiedToken === `${domain.domain}-3002`} />
                                             </Button>
                                           </div>
                                         </td>
@@ -656,14 +676,14 @@ export function DomainsSettings({projectId}: DomainsSettingsProps) {
                                                   1002,
                                                 )
                                               }
-                                              className="shrink-0 h-6 w-6 p-0"
+                                              className="shrink-0 h-6 w-6 p-0 overflow-hidden"
                                             >
-                                              {copiedToken ===
-                                              `10 inbound-smtp.${config.aws.sesRegion}.amazonaws.com-1002` ? (
-                                                <Check className="h-3 w-3 text-green-600" />
-                                              ) : (
-                                                <Copy className="h-3 w-3" />
-                                              )}
+                                              <AnimatedCopyIcon
+                                                isCopied={
+                                                  copiedToken ===
+                                                  `10 inbound-smtp.${config.aws.sesRegion}.amazonaws.com-1002`
+                                                }
+                                              />
                                             </Button>
                                           </div>
                                         </td>
@@ -674,8 +694,8 @@ export function DomainsSettings({projectId}: DomainsSettingsProps) {
                               </div>
                             )}
 
-                            <div className="flex items-start gap-2 p-3 bg-blue-50 rounded-lg border border-blue-200 mt-3">
-                              <div className="text-blue-600 mt-0.5">
+                            <div className="flex items-start gap-2 p-3 bg-neutral-50 rounded-lg border border-neutral-200 mt-3">
+                              <div className="text-neutral-500 mt-0.5">
                                 <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
                                   <path
                                     fillRule="evenodd"
@@ -684,7 +704,7 @@ export function DomainsSettings({projectId}: DomainsSettingsProps) {
                                   />
                                 </svg>
                               </div>
-                              <p className="text-xs text-blue-900">
+                              <p className="text-xs text-neutral-600">
                                 Click the copy icon to copy record values. After adding all records to your DNS
                                 provider, use the refresh button above to verify your domain.
                               </p>

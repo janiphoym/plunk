@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@plunk/ui';
+import {EmptyState} from '@plunk/ui';
 import {DashboardLayout} from '../../components/DashboardLayout';
 import {useAnalytics} from '../../lib/hooks/useAnalytics';
 import useSWR from 'swr';
@@ -148,8 +149,8 @@ export default function AnalyticsPage() {
       value: stats?.totalEmailsSent?.toLocaleString() || cumulativeTotals.emails.toLocaleString(),
       icon: Send,
       description: `Last ${days} days`,
-      color: 'text-blue-600',
-      bgColor: 'bg-blue-100',
+      color: 'text-neutral-600',
+      bgColor: 'bg-neutral-100',
       trend: stats?.totalEmailsSent ? (stats.totalEmailsSent > 0 ? 'positive' : 'neutral') : 'neutral',
     },
     {
@@ -157,8 +158,8 @@ export default function AnalyticsPage() {
       value: stats?.openRate ? `${stats.openRate.toFixed(1)}%` : '0%',
       icon: Eye,
       description: `${stats?.totalEmailsOpened?.toLocaleString() || cumulativeTotals.opens.toLocaleString()} opens`,
-      color: 'text-green-600',
-      bgColor: 'bg-green-100',
+      color: 'text-neutral-600',
+      bgColor: 'bg-neutral-100',
       trend: stats?.openRate && stats.openRate > 20 ? 'positive' : 'neutral',
     },
     {
@@ -166,8 +167,8 @@ export default function AnalyticsPage() {
       value: stats?.clickRate ? `${stats.clickRate.toFixed(1)}%` : '0%',
       icon: MousePointerClick,
       description: `${stats?.totalEmailsClicked?.toLocaleString() || cumulativeTotals.clicks.toLocaleString()} clicks`,
-      color: 'text-purple-600',
-      bgColor: 'bg-purple-100',
+      color: 'text-neutral-600',
+      bgColor: 'bg-neutral-100',
       trend: stats?.clickRate && stats.clickRate > 3 ? 'positive' : 'neutral',
     },
     {
@@ -175,8 +176,8 @@ export default function AnalyticsPage() {
       value: campaignStats?.active?.toLocaleString() || '0',
       icon: Megaphone,
       description: `${campaignStats?.total || 0} total campaigns`,
-      color: 'text-indigo-600',
-      bgColor: 'bg-indigo-100',
+      color: 'text-neutral-600',
+      bgColor: 'bg-neutral-100',
       trend: campaignStats?.active ? 'positive' : 'neutral',
     },
     {
@@ -184,8 +185,8 @@ export default function AnalyticsPage() {
       value: stats?.totalWorkflowsStarted?.toLocaleString() || '0',
       icon: Activity,
       description: 'Automations triggered',
-      color: 'text-cyan-600',
-      bgColor: 'bg-cyan-100',
+      color: 'text-neutral-600',
+      bgColor: 'bg-neutral-100',
       trend: stats?.totalWorkflowsStarted && stats.totalWorkflowsStarted > 0 ? 'positive' : 'neutral',
     },
     {
@@ -193,8 +194,8 @@ export default function AnalyticsPage() {
       value: stats?.totalEvents?.toLocaleString() || '0',
       icon: Zap,
       description: 'Custom events tracked',
-      color: 'text-orange-600',
-      bgColor: 'bg-orange-100',
+      color: 'text-neutral-600',
+      bgColor: 'bg-neutral-100',
       trend: stats?.totalEvents && stats.totalEvents > 0 ? 'positive' : 'neutral',
     },
   ];
@@ -270,11 +271,12 @@ export default function AnalyticsPage() {
             <CardContent>
               {!hasData ? (
                 <div className="flex h-[400px] w-full items-center justify-center">
-                  <div className="text-center">
-                    <Mail className="mx-auto h-12 w-12 text-muted-foreground/50" />
-                    <h3 className="mt-4 text-sm font-semibold text-neutral-900">No email data yet</h3>
-                    <p className="mt-2 text-sm text-muted-foreground">Send your first email to see analytics here</p>
-                  </div>
+                  <EmptyState
+                    className="py-0"
+                    icon={Mail}
+                    title="No email data yet"
+                    description="Send your first email to see analytics here."
+                  />
                 </div>
               ) : (
                 <ChartContainer config={volumeChartConfig} className="h-[400px] w-full">
@@ -379,13 +381,12 @@ export default function AnalyticsPage() {
             <CardContent>
               {!hasData ? (
                 <div className="flex h-[300px] w-full items-center justify-center">
-                  <div className="text-center">
-                    <Eye className="mx-auto h-12 w-12 text-muted-foreground/50" />
-                    <h3 className="mt-4 text-sm font-semibold text-neutral-900">No engagement data</h3>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      Engagement metrics will appear once emails are opened
-                    </p>
-                  </div>
+                  <EmptyState
+                    className="py-0"
+                    icon={Eye}
+                    title="No engagement data"
+                    description="Engagement metrics will appear once emails are opened."
+                  />
                 </div>
               ) : (
                 <ChartContainer config={engagementChartConfig} className="h-[300px] w-full">
@@ -456,8 +457,8 @@ export default function AnalyticsPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-start gap-3">
-                  <div className="h-8 w-8 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0">
-                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  <div className="h-8 w-8 rounded-lg bg-neutral-100 flex items-center justify-center flex-shrink-0">
+                    <CheckCircle2 className="h-4 w-4 text-neutral-600" />
                   </div>
                   <div>
                     <p className="text-sm font-medium text-neutral-900">Open Rate</p>
@@ -469,8 +470,8 @@ export default function AnalyticsPage() {
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
-                  <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
-                    <BarChart3 className="h-4 w-4 text-blue-600" />
+                  <div className="h-8 w-8 rounded-lg bg-neutral-100 flex items-center justify-center flex-shrink-0">
+                    <BarChart3 className="h-4 w-4 text-neutral-600" />
                   </div>
                   <div>
                     <p className="text-sm font-medium text-neutral-900">Click Rate</p>
@@ -482,8 +483,8 @@ export default function AnalyticsPage() {
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
-                  <div className="h-8 w-8 rounded-lg bg-purple-100 flex items-center justify-center flex-shrink-0">
-                    <Zap className="h-4 w-4 text-purple-600" />
+                  <div className="h-8 w-8 rounded-lg bg-neutral-100 flex items-center justify-center flex-shrink-0">
+                    <Zap className="h-4 w-4 text-neutral-600" />
                   </div>
                   <div>
                     <p className="text-sm font-medium text-neutral-900">Engagement</p>
@@ -508,8 +509,8 @@ export default function AnalyticsPage() {
                     <p className="text-2xl font-bold text-neutral-900">{stats?.totalEvents?.toLocaleString() || '0'}</p>
                     <p className="text-sm text-neutral-500">Total Events</p>
                   </div>
-                  <div className="h-12 w-12 rounded-lg bg-orange-100 flex items-center justify-center">
-                    <Zap className="h-6 w-6 text-orange-600" />
+                  <div className="h-12 w-12 rounded-lg bg-neutral-100 flex items-center justify-center">
+                    <Zap className="h-6 w-6 text-neutral-600" />
                   </div>
                 </div>
                 <div className="pt-4 border-t">
@@ -565,11 +566,7 @@ export default function AnalyticsPage() {
                           <td className="text-right py-3 px-4">
                             <span
                               className={`text-sm font-medium ${
-                                campaign.openRate > 30
-                                  ? 'text-green-600'
-                                  : campaign.openRate > 20
-                                    ? 'text-blue-600'
-                                    : 'text-neutral-600'
+                                campaign.openRate > 30 ? 'text-green-700' : 'text-neutral-700'
                               }`}
                             >
                               {campaign.openRate.toFixed(1)}%
@@ -578,11 +575,7 @@ export default function AnalyticsPage() {
                           <td className="text-right py-3 px-4">
                             <span
                               className={`text-sm font-medium ${
-                                campaign.clickRate > 5
-                                  ? 'text-green-600'
-                                  : campaign.clickRate > 3
-                                    ? 'text-blue-600'
-                                    : 'text-neutral-600'
+                                campaign.clickRate > 5 ? 'text-green-700' : 'text-neutral-700'
                               }`}
                             >
                               {campaign.clickRate.toFixed(1)}%

@@ -154,6 +154,16 @@ Required for builds and deployment (see turbo.json and .env.example):
     plus-addressing, domain existence, and MX records
 - Security (optional): `AUTO_PROJECT_DISABLE` (default: true) - Controls whether projects are automatically disabled when
   bounce/complaint rate thresholds are exceeded
+- Attachment Limits (optional):
+  - `MAX_ATTACHMENT_SIZE_MB` (default: 10) - Maximum total attachment size in megabytes per email. AWS SES supports up to 40 MB.
+  - `MAX_ATTACHMENTS_COUNT` (default: 10) - Maximum number of attachments per email
+- Phishing Detection (optional):
+  - `OPENROUTER_API_KEY` - API key for OpenRouter (enables phishing detection)
+  - `OPENROUTER_MODEL` (default: anthropic/claude-3-haiku) - LLM model to use for content analysis
+  - `PHISHING_DETECTION_SAMPLE_RATE` (default: 0.1) - Percentage of emails to check (0.0-1.0, e.g., 0.1 = 10%)
+  - `PHISHING_CONFIDENCE_THRESHOLD` (default: 85) - Minimum confidence percentage (0-100) to auto-disable project for single detection
+  - `PHISHING_CUMULATIVE_THRESHOLD` (default: 3) - Number of phishing detections within time window to trigger auto-disable
+  - `PHISHING_CUMULATIVE_WINDOW_MS` (default: 3600000) - Time window in milliseconds for cumulative tracking (default 1 hour)
 
 **Important Notes:**
 

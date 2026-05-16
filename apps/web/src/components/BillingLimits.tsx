@@ -13,6 +13,7 @@ import {
   Form,
   FormControl,
   FormDescription,
+  IconSpinner,
   FormField,
   FormItem,
   FormLabel,
@@ -58,13 +59,13 @@ const formatEmailCost = (emailCount: number, currency: string | null): string =>
 
 interface BillingLimitsProps {
   projectId: string;
-  hasSubscription: boolean;
+  tier: 'free' | 'paid';
   billingEnabled: boolean;
 }
 
 type LimitsFormValues = z.infer<typeof BillingLimitSchemas.update>;
 
-export function BillingLimits({projectId, hasSubscription, billingEnabled}: BillingLimitsProps) {
+export function BillingLimits({projectId, tier, billingEnabled}: BillingLimitsProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -131,7 +132,7 @@ export function BillingLimits({projectId, hasSubscription, billingEnabled}: Bill
   };
 
   // Free tier projects can view their usage but can't edit limits
-  const canEditLimits = hasSubscription;
+  const canEditLimits = tier === 'paid';
 
   // If billing is not enabled, don't show the component
   if (!billingEnabled) {
@@ -146,7 +147,9 @@ export function BillingLimits({projectId, hasSubscription, billingEnabled}: Bill
           <CardDescription>Set monthly limits for each email category</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-neutral-500">Loading...</p>
+          <div className="flex items-center justify-center py-4">
+            <IconSpinner size="sm" />
+          </div>
         </CardContent>
       </Card>
     );
@@ -157,7 +160,7 @@ export function BillingLimits({projectId, hasSubscription, billingEnabled}: Bill
       <CardHeader>
         <CardTitle>Billing Limits</CardTitle>
         <CardDescription>
-          {hasSubscription
+          {tier === 'paid'
             ? 'Set monthly limits for each email category. Limits reset on the 1st of each month.'
             : 'Free tier projects have a total limit of 1,000 emails per month across all categories.'}
         </CardDescription>
@@ -165,7 +168,7 @@ export function BillingLimits({projectId, hasSubscription, billingEnabled}: Bill
       <CardContent>
         <div className="space-y-6">
           {/* Free tier info banner */}
-          {!hasSubscription && limitsData && (
+          {tier !== 'paid' && limitsData && (
             <Alert>
               <AlertCircle className="h-4 w-4" />
               <div className="ml-2">
@@ -205,7 +208,7 @@ export function BillingLimits({projectId, hasSubscription, billingEnabled}: Bill
           {!isEditing && limitsData && (
             <div className="space-y-4">
               {/* For free tier, show total usage across all categories */}
-              {!hasSubscription ? (
+              {tier !== 'paid' ? (
                 <UsageDisplay
                   category="Total Emails (All Categories)"
                   usage={limitsData.workflows}
@@ -381,15 +384,15 @@ interface UsageDisplayProps {
 
 const UsageDisplay = memo(function UsageDisplay({category, usage, currency}: UsageDisplayProps) {
   const statusColor = useMemo(() => {
-    if (usage.isBlocked) return 'text-red-600';
-    if (usage.isWarning) return 'text-orange-600';
-    return 'text-green-600';
+    if (usage.isBlocked) return 'text-red-700';
+    if (usage.isWarning) return 'text-amber-700';
+    return 'text-neutral-600';
   }, [usage.isBlocked, usage.isWarning]);
 
   const progressColor = useMemo(() => {
     if (usage.isBlocked) return 'bg-red-600';
-    if (usage.isWarning) return 'bg-orange-500';
-    return 'bg-green-600';
+    if (usage.isWarning) return 'bg-amber-500';
+    return 'bg-neutral-900';
   }, [usage.isBlocked, usage.isWarning]);
 
   const statusIcon = useMemo(() => {
@@ -437,10 +440,10 @@ const UsageDisplay = memo(function UsageDisplay({category, usage, currency}: Usa
           <Progress value={Math.min(usage.percentage, 100)} className="h-2" indicatorClassName={progressColor} />
 
           {usage.isBlocked && (
-            <Alert className="mt-3 bg-red-50 border-red-200 text-red-900">
+            <Alert variant="destructive" className="mt-3">
               <AlertCircle className="h-4 w-4" />
               <div className="ml-2">
-                <p className={'text-sm'}>
+                <p className="text-sm">
                   <strong>Limit reached:</strong> No more {category.toLowerCase()} emails can be sent this month.
                 </p>
               </div>
@@ -448,7 +451,7 @@ const UsageDisplay = memo(function UsageDisplay({category, usage, currency}: Usa
           )}
 
           {usage.isWarning && !usage.isBlocked && (
-            <Alert className="mt-3 bg-orange-50 border-orange-200 text-orange-900">
+            <Alert variant="warning" className="mt-3">
               <AlertTriangle className="h-4 w-4" />
               <div className="ml-2">
                 <p className="text-sm">

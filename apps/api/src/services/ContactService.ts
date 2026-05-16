@@ -77,6 +77,23 @@ export class ContactService {
   }
 
   /**
+   * Bulk-check which emails exist in the project — single query, safe for up to 500 addresses.
+   */
+  public static async lookup(
+    projectId: string,
+    emails: string[],
+  ): Promise<{found: string[]; notFound: string[]}> {
+    const rows = await prisma.contact.findMany({
+      where: {projectId, email: {in: emails, mode: 'insensitive'}},
+      select: {email: true},
+    });
+    const foundSet = new Set(rows.map(r => r.email.toLowerCase()));
+    const found = emails.filter(e => foundSet.has(e.toLowerCase()));
+    const notFound = emails.filter(e => !foundSet.has(e.toLowerCase()));
+    return {found, notFound};
+  }
+
+  /**
    * Find a contact by email (returns null if not found)
    */
   public static async findByEmail(projectId: string, email: string): Promise<Contact | null> {
@@ -118,6 +135,47 @@ export class ContactService {
    * Update a contact
    * Uses unique constraint violation to check for duplicates (more efficient)
    */
+  /**
+   * Merge an incoming partial data object into existing contact data.
+   * - `null` value on a key deletes that key
+   * - empty strings are ignored
+   * - reserved/system-generated keys are silently filtered
+   * - `{value, persistent: false}` entries are skipped (non-persistent)
+   */
+  private static mergeContactData(
+    existing: Prisma.JsonValue | null,
+    incoming: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const merged: Record<string, unknown> =
+      existing && typeof existing === 'object' && !Array.isArray(existing) ? {...(existing as Record<string, unknown>)} : {};
+
+    const reservedFields = ['plunk_id', 'plunk_email', 'id', 'email', 'unsubscribeUrl', 'subscribeUrl', 'manageUrl'];
+
+    for (const [key, value] of Object.entries(incoming)) {
+      if (reservedFields.includes(key)) continue;
+      if (value === '') continue;
+      if (value === null) {
+        delete merged[key];
+        continue;
+      }
+      if (key === 'locale' && typeof value !== 'string') {
+        throw new HttpException(400, 'Locale must be a string');
+      }
+      if (
+        typeof value === 'object' &&
+        value !== null &&
+        'value' in value &&
+        'persistent' in value &&
+        (value as {persistent: unknown}).persistent === false
+      ) {
+        continue;
+      }
+      merged[key] = value;
+    }
+
+    return merged;
+  }
+
   public static async update(
     projectId: string,
     contactId: string,
@@ -132,7 +190,14 @@ export class ContactService {
       updateData.email = data.email;
     }
     if (data.data !== undefined) {
-      updateData.data = data.data === null ? Prisma.JsonNull : data.data;
+      if (data.data === null) {
+        updateData.data = Prisma.JsonNull;
+      } else if (typeof data.data === 'object' && !Array.isArray(data.data)) {
+        const merged = ContactService.mergeContactData(existing.data, data.data as Record<string, unknown>);
+        updateData.data = Object.keys(merged).length > 0 ? toPrismaJson(merged) : Prisma.JsonNull;
+      } else {
+        throw new HttpException(400, 'data must be an object');
+      }
     }
     if (data.subscribed !== undefined) {
       updateData.subscribed = data.subscribed;
@@ -208,90 +273,56 @@ export class ContactService {
       },
     });
 
-    // Process data to merge with existing data
-    let mergedData: Record<string, unknown> = {};
-
-    if (existing?.data && typeof existing.data === 'object' && !Array.isArray(existing.data)) {
-      // Start with existing data
-      mergedData = {...existing.data};
-    }
-
-    // Merge new data (if provided)
-    if (data) {
-      for (const [key, value] of Object.entries(data)) {
-        // Skip reserved system-generated fields
-        // These fields are dynamically added during template rendering and cannot be overridden
-        const reservedFields = [
-          'plunk_id',
-          'plunk_email',
-          'id',
-          'email',
-          'unsubscribeUrl',
-          'subscribeUrl',
-          'manageUrl',
-        ];
-        if (reservedFields.includes(key)) {
-          continue;
-        }
-
-        // Validate locale field (special user-settable field)
-        // Only validate type - any locale string is accepted since we default to English if unsupported
-        if (key === 'locale') {
-          if (value !== null && value !== undefined && typeof value !== 'string') {
-            throw new HttpException(400, 'Locale must be a string');
-          }
-        }
-
-        // Handle non-persistent data format: { value: "...", persistent: false }
-        if (
-          typeof value === 'object' &&
-          value !== null &&
-          'value' in value &&
-          'persistent' in value &&
-          value.persistent === false
-        ) {
-          // Non-persistent fields are not stored in contact data
-          // They would be used only for the current operation (like email template rendering)
-          continue;
-        }
-
-        // Store the value
-        mergedData[key] = value;
-      }
-    }
+    const mergedData = ContactService.mergeContactData(existing?.data ?? null, data ?? {});
 
     if (existing) {
       // Track subscription status change
       const isSubscriptionChanging = subscribed !== undefined && existing.subscribed !== subscribed;
       const wasSubscribed = existing.subscribed;
 
-      const updated = await prisma.contact.update({
-        where: {id: existing.id},
-        data: {
-          data: Object.keys(mergedData).length > 0 ? toPrismaJson(mergedData) : Prisma.JsonNull,
-          ...(subscribed !== undefined ? {subscribed} : {}),
-        },
-      });
+      try {
+        const updated = await prisma.contact.update({
+          where: {id: existing.id},
+          data: {
+            data: Object.keys(mergedData).length > 0 ? toPrismaJson(mergedData) : Prisma.JsonNull,
+            ...(subscribed !== undefined ? {subscribed} : {}),
+          },
+        });
 
-      // Track subscription event if status changed
-      if (isSubscriptionChanging) {
-        if (subscribed && !wasSubscribed) {
-          await EventService.trackEvent(projectId, 'contact.subscribed', updated.id);
-        } else if (!subscribed && wasSubscribed) {
-          await EventService.trackEvent(projectId, 'contact.unsubscribed', updated.id);
+        // Track subscription event if status changed
+        if (isSubscriptionChanging) {
+          if (subscribed && !wasSubscribed) {
+            await EventService.trackEvent(projectId, 'contact.subscribed', updated.id);
+          } else if (!subscribed && wasSubscribed) {
+            await EventService.trackEvent(projectId, 'contact.unsubscribed', updated.id);
+          }
         }
-      }
 
-      return updated;
+        return updated;
+      } catch (error) {
+        // Provide helpful error message for database/validation issues
+        throw new HttpException(
+          500,
+          `Failed to update contact: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        );
+      }
     } else {
-      return prisma.contact.create({
-        data: {
-          projectId,
-          email,
-          data: Object.keys(mergedData).length > 0 ? toPrismaJson(mergedData) : Prisma.JsonNull,
-          subscribed: subscribed ?? defaultSubscribed,
-        },
-      });
+      try {
+        return await prisma.contact.create({
+          data: {
+            projectId,
+            email,
+            data: Object.keys(mergedData).length > 0 ? toPrismaJson(mergedData) : Prisma.JsonNull,
+            subscribed: subscribed ?? defaultSubscribed,
+          },
+        });
+      } catch (error) {
+        // Provide helpful error message for database/validation issues
+        throw new HttpException(
+          500,
+          `Failed to create contact: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        );
+      }
     }
   }
 
@@ -676,99 +707,81 @@ export class ContactService {
 
   /**
    * Bulk subscribe contacts
-   * Updates multiple contacts to subscribed=true in batches
+   * Updates multiple contacts to subscribed=true in batches.
+   * `updated` = contacts flipped from unsubscribed to subscribed.
+   * `unchanged` = contacts that were already subscribed (no-op, not a failure).
    */
-  public static async bulkSubscribe(projectId: string, contactIds: string[]): Promise<{updated: number}> {
-    // Verify all contacts belong to this project
+  public static async bulkSubscribe(
+    projectId: string,
+    contactIds: string[],
+  ): Promise<{updated: number; unchanged: number}> {
     const contacts = await prisma.contact.findMany({
-      where: {
-        id: {in: contactIds},
-        projectId,
-      },
+      where: {id: {in: contactIds}, projectId},
       select: {id: true, subscribed: true},
     });
 
-    const validIds = contacts.map(c => c.id);
-
-    if (validIds.length === 0) {
-      return {updated: 0};
+    if (contacts.length === 0) {
+      return {updated: 0, unchanged: 0};
     }
 
-    // Only update contacts that are currently unsubscribed
     const unsubscribedIds = contacts.filter(c => !c.subscribed).map(c => c.id);
+    const unchanged = contacts.length - unsubscribedIds.length;
 
     if (unsubscribedIds.length === 0) {
-      return {updated: 0};
+      return {updated: 0, unchanged};
     }
 
-    // Update in a single query for performance
     const result = await prisma.contact.updateMany({
-      where: {
-        id: {in: unsubscribedIds},
-        projectId,
-      },
-      data: {
-        subscribed: true,
-      },
+      where: {id: {in: unsubscribedIds}, projectId},
+      data: {subscribed: true},
     });
 
-    // Track events for changed contacts sequentially to avoid database deadlocks
-    // Process in background to avoid blocking the API response
     this.trackEventsSequentially(projectId, 'contact.subscribed', unsubscribedIds).catch(error => {
-      // Silently ignore errors in tests due to cleanup race conditions
       if (process.env.NODE_ENV !== 'test') {
         console.error('[ContactService] Failed to track bulk subscribe events:', error);
       }
     });
 
-    return {updated: result.count};
+    return {updated: result.count, unchanged};
   }
 
   /**
-   * Bulk unsubscribe contacts
+   * Bulk unsubscribe contacts.
+   * `updated` = contacts flipped from subscribed to unsubscribed.
+   * `unchanged` = contacts that were already unsubscribed (no-op, not a failure).
    */
-  public static async bulkUnsubscribe(projectId: string, contactIds: string[]): Promise<{updated: number}> {
+  public static async bulkUnsubscribe(
+    projectId: string,
+    contactIds: string[],
+  ): Promise<{updated: number; unchanged: number}> {
     const contacts = await prisma.contact.findMany({
-      where: {
-        id: {in: contactIds},
-        projectId,
-      },
+      where: {id: {in: contactIds}, projectId},
       select: {id: true, subscribed: true},
     });
 
-    const validIds = contacts.map(c => c.id);
-
-    if (validIds.length === 0) {
-      return {updated: 0};
+    if (contacts.length === 0) {
+      return {updated: 0, unchanged: 0};
     }
 
-    // Only update contacts that are currently subscribed
     const subscribedIds = contacts.filter(c => c.subscribed).map(c => c.id);
+    const unchanged = contacts.length - subscribedIds.length;
 
     if (subscribedIds.length === 0) {
-      return {updated: 0};
+      return {updated: 0, unchanged};
     }
 
     const result = await prisma.contact.updateMany({
-      where: {
-        id: {in: subscribedIds},
-        projectId,
-      },
-      data: {
-        subscribed: false,
-      },
+      where: {id: {in: subscribedIds}, projectId},
+      data: {subscribed: false},
     });
 
-    // Track events for changed contacts sequentially to avoid database deadlocks
-    // Process in background to avoid blocking the API response
     this.trackEventsSequentially(projectId, 'contact.unsubscribed', subscribedIds).catch(error => {
-      // Silently ignore errors in tests due to cleanup race conditions
       if (process.env.NODE_ENV !== 'test') {
         console.error('[ContactService] Failed to track bulk unsubscribe events:', error);
       }
     });
 
-    return {updated: result.count};
+    return {updated: result.count, unchanged};
   }
 
   /**

@@ -1,5 +1,5 @@
 import type {Campaign, Contact, Prisma} from '@plunk/db';
-import {CampaignAudienceType, CampaignStatus, EmailSourceType, TemplateType} from '@plunk/db';
+import {CampaignAudienceType, CampaignStatus, EmailSourceType, EmailStatus, TemplateType} from '@plunk/db';
 import type {CreateCampaignData, FilterCondition, PaginatedResponse, UpdateCampaignData} from '@plunk/types';
 import {fromPrismaJson, toPrismaJson} from '@plunk/types';
 import signale from 'signale';
@@ -186,16 +186,26 @@ export class CampaignService {
     projectId: string,
     options: {
       status?: CampaignStatus;
+      search?: string;
       page?: number;
       pageSize?: number;
     } = {},
   ): Promise<PaginatedResponse<Campaign>> {
-    const {status, page = 1, pageSize = 20} = options;
+    const {status, search, page = 1, pageSize = 20} = options;
     const skip = (page - 1) * pageSize;
 
     const where: Prisma.CampaignWhereInput = {
       projectId,
       ...(status ? {status} : {}),
+      ...(search
+        ? {
+            OR: [
+              {name: {contains: search, mode: 'insensitive' as const}},
+              {subject: {contains: search, mode: 'insensitive' as const}},
+              {from: {contains: search, mode: 'insensitive' as const}},
+            ],
+          }
+        : {}),
     };
 
     const [campaigns, total] = await Promise.all([
@@ -505,7 +515,75 @@ export class CampaignService {
         limit,
         cursor: nextCursor,
       });
+    } else {
+      // Last batch: reconcile totalRecipients to the actual number of emails created.
+      // Dynamic segments re-evaluate on each batch query, so contacts that left the
+      // segment after totalRecipients was calculated are silently skipped. Without this
+      // reconciliation, sentCount can never reach the original totalRecipients and the
+      // campaign remains stuck in SENDING forever.
+      const actualEmailCount = await prisma.email.count({where: {campaignId}});
+
+      await prisma.campaign.update({
+        where: {id: campaignId},
+        data: {totalRecipients: actualEmailCount},
+      });
+
+      await this.finalizeIfDone(campaignId);
     }
+  }
+
+  /**
+   * Finalize a SENDING campaign if every email has reached a terminal state.
+   * Terminal = sentAt is set OR status is FAILED. Counting FAILED as terminal
+   * unsticks campaigns where some emails couldn't be delivered (e.g. the project
+   * was disabled mid-send), so the campaign moves to SENT with a partial sentCount.
+   */
+  public static async finalizeIfDone(campaignId: string): Promise<void> {
+    const campaign = await prisma.campaign.findUnique({
+      where: {id: campaignId},
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        totalRecipients: true,
+        projectId: true,
+        project: {select: {name: true}},
+      },
+    });
+
+    if (!campaign || campaign.status !== CampaignStatus.SENDING) {
+      return;
+    }
+
+    const [processedCount, sentCount] = await Promise.all([
+      prisma.email.count({
+        where: {
+          campaignId,
+          OR: [{sentAt: {not: null}}, {status: EmailStatus.FAILED}],
+        },
+      }),
+      prisma.email.count({where: {campaignId, sentAt: {not: null}}}),
+    ]);
+
+    if (campaign.totalRecipients > 0 && processedCount < campaign.totalRecipients) {
+      return;
+    }
+
+    await prisma.campaign.update({
+      where: {id: campaignId},
+      data: {status: CampaignStatus.SENT, sentCount},
+    });
+
+    signale.success(
+      `[CAMPAIGN] Campaign ${campaign.name} finalized: ${sentCount}/${campaign.totalRecipients} emails sent`,
+    );
+
+    await NtfyService.notifyCampaignSendCompleted(
+      campaign.name,
+      campaign.project.name,
+      campaign.projectId,
+      sentCount,
+    );
   }
 
   /**
@@ -738,7 +816,7 @@ export class CampaignService {
         }
 
         // Use the SegmentService to build the where clause from the condition
-        const segmentWhere = SegmentService.buildConditionClause(condition);
+        const segmentWhere = await SegmentService.buildConditionClause(condition);
 
         return {
           ...baseWhere,
@@ -781,7 +859,7 @@ export class CampaignService {
     }
 
     const condition = fromPrismaJson<FilterCondition>(segment.condition);
-    const segmentWhere = SegmentService.buildConditionClause(condition);
+    const segmentWhere = await SegmentService.buildConditionClause(condition);
 
     return {
       ...baseWhere,

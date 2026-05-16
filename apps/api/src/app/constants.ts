@@ -45,6 +45,12 @@ export const AWS_SES_REGION = validateEnv('AWS_SES_REGION');
 export const AWS_SES_ACCESS_KEY_ID = validateEnv('AWS_SES_ACCESS_KEY_ID');
 export const AWS_SES_SECRET_ACCESS_KEY = validateEnv('AWS_SES_SECRET_ACCESS_KEY');
 
+// Custom MAIL FROM subdomain used to construct `<subdomain>.<your-domain>`
+// when a domain is added. Defaults to `plunk`. Override when `plunk.<your-domain>`
+// is already used for something else (e.g. a CDN), since the MAIL FROM hostname
+// needs MX + TXT records that can't coexist with a CNAME.
+export const MAIL_FROM_SUBDOMAIN = validateEnv('MAIL_FROM_SUBDOMAIN', '').trim() || 'plunk';
+
 // Email Processing Rate Limit (optional override)
 // If not set, will automatically fetch from AWS SES account quota
 // Set this to override AWS quota (useful for setting lower limits or testing)
@@ -110,8 +116,24 @@ export const DISABLE_SIGNUPS = process.env.DISABLE_SIGNUPS === 'true';
 // Controls whether email validation checks are performed on signup (default: false)
 export const VERIFY_EMAIL_ON_SIGNUP = process.env.VERIFY_EMAIL_ON_SIGNUP === 'true';
 
+// Attachment Limits (optional)
+// Maximum total attachment size in MB (default: 10). AWS SES supports up to 40 MB.
+export const MAX_ATTACHMENT_SIZE_MB = Number(validateEnv('MAX_ATTACHMENT_SIZE_MB', '10'));
+// Maximum number of attachments per email (default: 10)
+export const MAX_ATTACHMENTS_COUNT = Number(validateEnv('MAX_ATTACHMENTS_COUNT', '10'));
+
 // Email Verification & Password Reset
 export const TOKEN_EXPIRY_SECONDS = 3600; // 1 hour
 export const EMAIL_VERIFICATION_RATE_LIMIT = 3; // Max 3 emails per hour
 export const PASSWORD_RESET_RATE_LIMIT = 3; // Max 3 emails per hour
 export const EMAIL_VERIFICATION_RATE_WINDOW = 3600; // 1 hour in seconds
+
+// Phishing Detection (optional)
+// OpenRouter API integration for content safety checks
+export const OPENROUTER_API_KEY = validateEnv('OPENROUTER_API_KEY', '');
+export const OPENROUTER_MODEL = validateEnv('OPENROUTER_MODEL', 'anthropic/claude-3-haiku');
+export const PHISHING_DETECTION_SAMPLE_RATE = Number(validateEnv('PHISHING_DETECTION_SAMPLE_RATE', '0.1')); // Default 10% of emails
+export const PHISHING_DETECTION_ENABLED = OPENROUTER_API_KEY !== '';
+export const PHISHING_CONFIDENCE_THRESHOLD = Number(validateEnv('PHISHING_CONFIDENCE_THRESHOLD', '95')); // Confidence % required to auto-disable project from a single detection
+export const PHISHING_CUMULATIVE_THRESHOLD = Number(validateEnv('PHISHING_CUMULATIVE_THRESHOLD', '3')); // Number of phishing detections before auto-disable (default 3)
+export const PHISHING_CUMULATIVE_WINDOW_MS = Number(validateEnv('PHISHING_CUMULATIVE_WINDOW_MS', '3600000')); // Time window for cumulative tracking in ms (default 1 hour)

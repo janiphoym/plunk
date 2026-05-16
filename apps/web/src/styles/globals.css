@@ -2,6 +2,7 @@
 
 @plugin '@tailwindcss/forms';
 @plugin '@tailwindcss/typography';
+@plugin 'tailwindcss-animate';
 
 @source '../../../../packages/ui/src/**/*.{ts,tsx}';
 
@@ -162,5 +163,14 @@
     body {
         @apply bg-background text-neutral-800 overflow-hidden;
         font-feature-settings: "rlig" 1, "calt" 1;
+    }
+}
+
+@keyframes indeterminate {
+    0% {
+        transform: translateX(-100%);
+    }
+    100% {
+        transform: translateX(400%);
     }
 }

@@ -1,5 +1,5 @@
 import type {Project} from '@plunk/db';
-import {createContext, type ReactNode, useContext, useEffect, useState} from 'react';
+import {createContext, type ReactNode, use, useEffect, useState} from 'react';
 import {useSWRConfig} from 'swr';
 
 import {useProjects} from '../hooks/useProject';
@@ -7,6 +7,7 @@ import {useProjects} from '../hooks/useProject';
 interface ActiveProjectContextValue {
   activeProject: Project | null;
   setActiveProject: (project: Project) => void;
+  updateActiveProject: (project: Project) => void;
   availableProjects: Project[];
   isLoading: boolean;
 }
@@ -55,9 +56,16 @@ export function ActiveProjectProvider({children}: {children: ReactNode}) {
     void mutate(() => true, undefined, {revalidate: true});
   };
 
+  // Updates the active project's data in-place without invalidating the SWR cache.
+  // Use this when saving settings for the current project, not when switching projects.
+  const updateActiveProject = (project: Project) => {
+    setActiveProjectState(project);
+  };
+
   const value: ActiveProjectContextValue = {
     activeProject,
     setActiveProject,
+    updateActiveProject,
     availableProjects: projects ?? [],
     isLoading,
   };
@@ -66,7 +74,7 @@ export function ActiveProjectProvider({children}: {children: ReactNode}) {
 }
 
 export function useActiveProject() {
-  const context = useContext(ActiveProjectContext);
+  const context = use(ActiveProjectContext);
   if (context === undefined) {
     throw new Error('useActiveProject must be used within an ActiveProjectProvider');
   }

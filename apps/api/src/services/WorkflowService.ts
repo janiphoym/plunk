@@ -311,6 +311,72 @@ export class WorkflowService {
   }
 
   /**
+   * Duplicate a workflow including all steps and transitions.
+   * The duplicate always starts disabled to prevent accidental triggering.
+   * Runtime execution state is intentionally not copied.
+   */
+  public static async duplicate(projectId: string, workflowId: string): Promise<Workflow> {
+    const source = await this.get(projectId, workflowId);
+
+    const transitions = await prisma.workflowTransition.findMany({
+      where: {fromStep: {workflowId}},
+    });
+
+    return prisma.$transaction(async tx => {
+      const newWorkflow = await tx.workflow.create({
+        data: {
+          projectId,
+          name: `${source.name} (Copy)`,
+          description: source.description,
+          triggerType: source.triggerType,
+          triggerConfig:
+            source.triggerConfig === null
+              ? Prisma.JsonNull
+              : (source.triggerConfig as Prisma.InputJsonValue),
+          enabled: false,
+          allowReentry: source.allowReentry,
+        },
+      });
+
+      const stepIdMap = new Map<string, string>();
+
+      for (const step of source.steps) {
+        const created = await tx.workflowStep.create({
+          data: {
+            workflowId: newWorkflow.id,
+            type: step.type,
+            name: step.name,
+            position: step.position as Prisma.InputJsonValue,
+            config: step.config as Prisma.InputJsonValue,
+            templateId: step.templateId,
+          },
+        });
+        stepIdMap.set(step.id, created.id);
+      }
+
+      for (const transition of transitions) {
+        const fromStepId = stepIdMap.get(transition.fromStepId);
+        const toStepId = stepIdMap.get(transition.toStepId);
+        if (!fromStepId || !toStepId) continue;
+
+        await tx.workflowTransition.create({
+          data: {
+            fromStepId,
+            toStepId,
+            condition:
+              transition.condition === null
+                ? Prisma.JsonNull
+                : (transition.condition as Prisma.InputJsonValue),
+            priority: transition.priority,
+          },
+        });
+      }
+
+      return newWorkflow;
+    });
+  }
+
+  /**
    * Add a step to a workflow
    */
   public static async addStep(
@@ -574,6 +640,66 @@ export class WorkflowService {
         workflowId, // Safety check to ensure we only delete steps from this workflow
       },
     });
+  }
+
+  /**
+   * Splice a step out of the flow: re-wire its parent(s) directly to its child,
+   * then delete only the step itself. Not allowed for CONDITION or TRIGGER steps.
+   */
+  public static async spliceStep(projectId: string, workflowId: string, stepId: string): Promise<void> {
+    await this.get(projectId, workflowId);
+
+    const step = await prisma.workflowStep.findUnique({
+      where: {id: stepId},
+      include: {
+        outgoingTransitions: true,
+        incomingTransitions: true,
+      },
+    });
+
+    if (step?.workflowId !== workflowId) {
+      throw new HttpException(404, 'Workflow step not found');
+    }
+
+    if (step.type === 'TRIGGER') {
+      throw new HttpException(400, 'Cannot remove the trigger step.');
+    }
+
+    if (step.type === 'CONDITION') {
+      throw new HttpException(400, 'Cannot splice a condition step out of the flow.');
+    }
+
+    // Check for active executions on this step
+    const executionsOnStep = await prisma.workflowExecution.count({
+      where: {
+        workflowId,
+        currentStepId: stepId,
+        status: {in: [WorkflowExecutionStatus.RUNNING, WorkflowExecutionStatus.WAITING]},
+      },
+    });
+
+    if (executionsOnStep > 0) {
+      throw new HttpException(
+        409,
+        `Cannot remove step "${step.name}" while ${executionsOnStep} execution(s) are currently on it. ` +
+          'Please disable the workflow first or wait for executions to complete.',
+      );
+    }
+
+    // Re-wire: for each incoming transition, point it to our child (if we have one)
+    const child = step.outgoingTransitions[0];
+
+    if (child) {
+      for (const incoming of step.incomingTransitions) {
+        await prisma.workflowTransition.update({
+          where: {id: incoming.id},
+          data: {toStepId: child.toStepId},
+        });
+      }
+    }
+
+    // Delete the step — cascades and removes its own transitions
+    await prisma.workflowStep.delete({where: {id: stepId}});
   }
 
   /**

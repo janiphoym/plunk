@@ -26,6 +26,7 @@ import {
   SelectItemWithDescription,
   SelectTrigger,
   SelectValue,
+  IconSpinner,
   StickySaveBar,
 } from '@plunk/ui';
 import type {Campaign, Segment} from '@plunk/db';
@@ -53,11 +54,13 @@ import {
   Users,
   XCircle,
 } from 'lucide-react';
+import DOMPurify from 'dompurify';
 import Link from 'next/link';
 import {useRouter} from 'next/router';
 import {useEffect, useState} from 'react';
 import {toast} from 'sonner';
 import useSWR from 'swr';
+import {NextSeo} from 'next-seo';
 import {useActiveProject} from '../../lib/contexts/ActiveProjectProvider';
 
 interface CampaignStats {
@@ -104,14 +107,19 @@ export default function CampaignDetailsPage() {
   );
 
   const [editedCampaign, setEditedCampaign] = useState<Partial<Campaign>>({});
-  const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
   const [scheduledDateTime, setScheduledDateTime] = useState('');
-  const [isTestEmailDialogOpen, setIsTestEmailDialogOpen] = useState(false);
+  const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [testEmailAddress, setTestEmailAddress] = useState('');
-  const [sendingTestEmail, setSendingTestEmail] = useState(false);
-  const [showCancelDialog, setShowCancelDialog] = useState(false);
-  const [showSendDialog, setShowSendDialog] = useState(false);
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  type CampaignDialog =
+    | {type: 'none'}
+    | {type: 'schedule'}
+    | {type: 'testEmail'; sending: boolean}
+    | {type: 'send'}
+    | {type: 'cancel'}
+    | {type: 'delete'};
+
+  const [dialog, setDialog] = useState<CampaignDialog>({type: 'none'});
 
   // Automatically initialize edit fields when campaign is loaded and is a draft
   const isEditMode = campaign?.data.status === CampaignStatus.DRAFT;
@@ -170,8 +178,9 @@ export default function CampaignDetailsPage() {
       // Show confirmation with user's local time
       const localTimeString = formatFullDateTime(scheduledDate);
       toast.success(`Campaign scheduled for ${localTimeString}`);
-      setIsScheduleDialogOpen(false);
+      setDialog({type: 'none'});
       setScheduledDateTime('');
+      setSelectedPreset(null);
       void mutate();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to schedule campaign');
@@ -184,7 +193,7 @@ export default function CampaignDetailsPage() {
       return;
     }
 
-    setSendingTestEmail(true);
+    setDialog({type: 'testEmail', sending: true});
 
     try {
       await network.fetch<{success: boolean; message: string}>('POST', `/campaigns/${id}/test`, {
@@ -192,12 +201,12 @@ export default function CampaignDetailsPage() {
       } as any);
 
       toast.success(`Test email sent to ${testEmailAddress}`);
-      setIsTestEmailDialogOpen(false);
+      setDialog({type: 'none'});
       setTestEmailAddress('');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to send test email');
     } finally {
-      setSendingTestEmail(false);
+      setDialog(d => (d.type === 'testEmail' ? {type: 'testEmail', sending: false} : d));
     }
   };
 
@@ -308,10 +317,7 @@ export default function CampaignDetailsPage() {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center py-12">
-          <div className="text-center">
-            <div className="h-8 w-8 animate-spin mx-auto border-4 border-neutral-200 border-t-neutral-900 rounded-full" />
-            <p className="mt-2 text-sm text-neutral-500">Loading campaign...</p>
-          </div>
+          <IconSpinner />
         </div>
       </DashboardLayout>
     );
@@ -340,15 +346,14 @@ export default function CampaignDetailsPage() {
   if (isEditMode) {
     return (
       <DashboardLayout>
+        <NextSeo title={campaign.data.name} />
         <form onSubmit={handleSave} className={`space-y-6 ${hasChanges ? 'pb-32' : ''}`}>
           {/* Header */}
           <div className="space-y-4">
             <div className="flex items-center gap-3 sm:gap-4">
-              <Link href="/campaigns">
-                <Button type="button" variant="ghost" size="sm">
-                  <ArrowLeft className="h-4 w-4" />
-                </Button>
-              </Link>
+              <Button asChild variant="ghost" size="sm">
+                <Link href="/campaigns"><ArrowLeft className="h-4 w-4" /></Link>
+              </Button>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 sm:gap-3">
                   <h1 className="text-2xl sm:text-3xl font-bold text-neutral-900 truncate">{c.name}</h1>
@@ -372,7 +377,7 @@ export default function CampaignDetailsPage() {
                 <Button
                   type="button"
                   variant="destructive"
-                  onClick={() => setShowDeleteDialog(true)}
+                  onClick={() => setDialog({type: 'delete'})}
                   className="flex-1 sm:flex-none"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -397,7 +402,7 @@ export default function CampaignDetailsPage() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-72">
-                    <DropdownMenuItem onClick={() => setIsTestEmailDialogOpen(true)} className="py-3 cursor-pointer">
+                    <DropdownMenuItem onClick={() => setDialog({type: 'testEmail', sending: false})} className="py-3 cursor-pointer">
                       <div className="flex items-start gap-3">
                         <TestTube className="h-4 w-4 mt-0.5 text-neutral-700" />
                         <div className="flex flex-col gap-0.5 flex-1">
@@ -408,7 +413,7 @@ export default function CampaignDetailsPage() {
                         </div>
                       </div>
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setShowSendDialog(true)} className="py-3 cursor-pointer">
+                    <DropdownMenuItem onClick={() => setDialog({type: 'send'})} className="py-3 cursor-pointer">
                       <div className="flex items-start gap-3">
                         <Send className="h-4 w-4 mt-0.5 text-neutral-700" />
                         <div className="flex flex-col gap-0.5 flex-1">
@@ -419,7 +424,7 @@ export default function CampaignDetailsPage() {
                         </div>
                       </div>
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setIsScheduleDialogOpen(true)} className="py-3 cursor-pointer">
+                    <DropdownMenuItem onClick={() => setDialog({type: 'schedule'})} className="py-3 cursor-pointer">
                       <div className="flex items-start gap-3">
                         <Calendar className="h-4 w-4 mt-0.5 text-neutral-700" />
                         <div className="flex flex-col gap-0.5 flex-1">
@@ -434,127 +439,35 @@ export default function CampaignDetailsPage() {
             </div>
           </div>
 
-          {/* Campaign Settings - Horizontal Layout */}
-          <div className="grid gap-6 md:grid-cols-2">
-            {/* Campaign Settings */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Campaign Settings</CardTitle>
-                <CardDescription>Basic information about your campaign</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="name">Campaign Name *</Label>
-                  <Input
-                    id="name"
-                    type="text"
-                    value={editedCampaign.name || ''}
-                    onChange={e => setEditedCampaign({...editedCampaign, name: e.target.value})}
-                    required
-                    placeholder="Spring Sale Campaign"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="description">Description</Label>
-                  <Input
-                    id="description"
-                    type="text"
-                    value={editedCampaign.description || ''}
-                    onChange={e => setEditedCampaign({...editedCampaign, description: e.target.value})}
-                    placeholder="Optional description for internal use"
-                  />
-                </div>
-
-                <div>
-                  <Label>Campaign Type</Label>
-                  <div className="flex flex-col gap-2 mt-2">
-                    {([
-                      {value: TemplateType.MARKETING, label: 'Marketing', description: 'Subscribed contacts, includes unsubscribe link'},
-                      {value: TemplateType.TRANSACTIONAL, label: 'Transactional', description: 'All contacts, no subscription check or footer'},
-                      {value: TemplateType.HEADLESS, label: 'Headless', description: 'Subscribed contacts, no Plunk footer'},
-                    ] as const).map(({value, label, description}) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => setEditedCampaign({...editedCampaign, type: value})}
-                        className={`flex items-center justify-between w-full min-h-[44px] px-4 py-3 rounded-lg border-2 text-left transition-colors ${
-                          (editedCampaign.type ?? c.type) === value
-                            ? 'border-neutral-900 bg-neutral-50'
-                            : 'border-neutral-200 hover:border-neutral-300'
-                        }`}
-                      >
-                        <span className="font-medium text-sm text-neutral-900 shrink-0">{label}</span>
-                        <span className="text-xs text-neutral-500 ml-4 text-right">{description}</span>
-                      </button>
-                    ))}
-                  </div>
-                  {(editedCampaign.type ?? c.type) === TemplateType.HEADLESS &&
-                    !detectUnsubscribeSignal(editedCampaign.body ?? c.body) && (
-                    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 overflow-hidden">
-                      <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-100/60 px-3 py-2">
-                        <TriangleAlert className="h-3.5 w-3.5 text-amber-600 shrink-0" />
-                        <p className="text-xs font-semibold text-amber-900">No unsubscribe link detected</p>
-                      </div>
-                      <div className="px-3 py-2.5 space-y-2">
-                        <p className="text-xs text-amber-800 leading-relaxed">
-                          You are responsible for providing recipients a way to opt out. Use the Plunk variables below to build your own footer.
-                        </p>
-                        <div className="flex flex-wrap gap-1.5">
-                          <code className="inline-flex items-center rounded bg-amber-100 border border-amber-200 px-1.5 py-0.5 font-mono text-[11px] text-amber-900">
-                            {'{{unsubscribeUrl}}'}
-                          </code>
-                          <code className="inline-flex items-center rounded bg-amber-100 border border-amber-200 px-1.5 py-0.5 font-mono text-[11px] text-amber-900">
-                            {'{{manageUrl}}'}
-                          </code>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <Label htmlFor="subject">Subject Line *</Label>
-                  <Input
-                    id="subject"
-                    type="text"
-                    value={editedCampaign.subject || ''}
-                    onChange={e => setEditedCampaign({...editedCampaign, subject: e.target.value})}
-                    required
-                    placeholder="Introducing our Spring Sale!"
-                  />
-                </div>
-
-                <EmailSettings
-                  from={editedCampaign.from || ''}
-                  fromName={editedCampaign.fromName || ''}
-                  replyTo={editedCampaign.replyTo || ''}
-                  onFromChange={value => setEditedCampaign({...editedCampaign, from: value})}
-                  onFromNameChange={value => setEditedCampaign({...editedCampaign, fromName: value})}
-                  onReplyToChange={value => setEditedCampaign({...editedCampaign, replyTo: value})}
-                  fromNamePlaceholder={activeProject?.name || 'Your Company'}
-                  showFromNameHelpText
-                  layout="vertical"
-                />
-              </CardContent>
-            </Card>
-
-            {/* Audience Settings */}
-            <Card>
-              <CardHeader>
+          {/* Audience — surfaced first because Send lives in the header.
+              Users need to see who/how many before pressing Send. */}
+          <Card>
+            <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+              <div>
                 <CardTitle>Audience</CardTitle>
-                <CardDescription>Who will receive this campaign</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="audienceType">Audience Type *</Label>
+                <CardDescription>Who will receive this campaign when you send</CardDescription>
+              </div>
+              {draftRecipientCount > 0 && (
+                <div className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-1.5 shrink-0">
+                  <Users className="h-4 w-4 text-neutral-500" />
+                  <span className="text-sm font-semibold text-neutral-900 tabular-nums">
+                    {draftRecipientCount.toLocaleString()} {draftRecipientCount === 1 ? 'recipient' : 'recipients'}
+                  </span>
+                </div>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="audienceType">
+                    Audience Type <span className="text-red-500">*</span>
+                  </Label>
                   <Select
                     value={editedCampaign.audienceType ?? c.audienceType}
                     onValueChange={(value: CampaignAudienceType) => {
                       setEditedCampaign({
                         ...editedCampaign,
                         audienceType: value,
-                        // Clear segmentId if changing away from SEGMENT
                         segmentId: value === CampaignAudienceType.SEGMENT ? editedCampaign.segmentId : undefined,
                       });
                     }}
@@ -570,7 +483,7 @@ export default function CampaignDetailsPage() {
                       />
                       <SelectItemWithDescription
                         value={CampaignAudienceType.SEGMENT}
-                        title="Segment"
+                        title="Specific Segment"
                         description="Target a defined group of contacts"
                       />
                     </SelectContent>
@@ -578,8 +491,10 @@ export default function CampaignDetailsPage() {
                 </div>
 
                 {(editedCampaign.audienceType ?? c.audienceType) === CampaignAudienceType.SEGMENT && (
-                  <div>
-                    <Label htmlFor="segment">Select Segment *</Label>
+                  <div className="space-y-2">
+                    <Label htmlFor="segment">
+                      Select Segment <span className="text-red-500">*</span>
+                    </Label>
                     <Select
                       value={editedCampaign.segmentId ?? c.segmentId ?? undefined}
                       onValueChange={(value: string) => {
@@ -609,36 +524,116 @@ export default function CampaignDetailsPage() {
                       </SelectContent>
                     </Select>
                     {segments && segments.length === 0 && (
-                      <p className="text-xs text-neutral-500 mt-1">Create a segment first to use this option</p>
+                      <p className="text-sm text-neutral-500">
+                        No segments found.{' '}
+                        <Link href="/segments/new" className="underline">
+                          Create one first
+                        </Link>
+                      </p>
                     )}
                   </div>
                 )}
+              </div>
 
-                {editedCampaign.audienceType === CampaignAudienceType.FILTERED && (
-                  <p className="text-sm text-neutral-500">
-                    Filtered audiences are configured with advanced filter conditions
-                  </p>
-                )}
+              {editedCampaign.audienceType === CampaignAudienceType.FILTERED && (
+                <p className="text-sm text-neutral-500">
+                  Filtered audiences are configured with advanced filter conditions
+                </p>
+              )}
 
-                {/* Show recipient count */}
-                {draftRecipientCount > 0 && (
-                  <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Users className="h-4 w-4 text-blue-600" />
-                      <span className="text-sm font-medium text-blue-900">
-                        {draftRecipientCount.toLocaleString()} recipients
-                      </span>
+              {draftRecipientCount > 0 && (
+                <p className="text-xs text-neutral-500">
+                  Recalculated at send time. Final count may differ if contacts{' '}
+                  {(editedCampaign.type ?? c.type) === TemplateType.TRANSACTIONAL
+                    ? 'are added or removed, or segment membership changes.'
+                    : 'subscribe, unsubscribe, or segment membership changes.'
+                  }
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Row 1: Basic Info + Campaign Type */}
+          <div className="grid gap-6 md:grid-cols-2">
+            {/* Basic Information */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Basic Information</CardTitle>
+                <CardDescription>Name and describe your campaign</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name">
+                    Campaign Name <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="name"
+                    placeholder="e.g., Spring Sale Announcement"
+                    value={editedCampaign.name || ''}
+                    onChange={e => setEditedCampaign({...editedCampaign, name: e.target.value})}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="description">Description</Label>
+                  <Input
+                    id="description"
+                    placeholder="Internal notes about this campaign"
+                    value={editedCampaign.description || ''}
+                    onChange={e => setEditedCampaign({...editedCampaign, description: e.target.value})}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Campaign Type */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Campaign Type</CardTitle>
+                <CardDescription>Choose how this campaign should be treated</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col gap-2">
+                  {([
+                    {value: TemplateType.MARKETING, label: 'Marketing', description: 'Subscribed contacts, includes unsubscribe link'},
+                    {value: TemplateType.TRANSACTIONAL, label: 'Transactional', description: 'All contacts, no subscription check or footer'},
+                    {value: TemplateType.HEADLESS, label: 'Headless', description: 'Subscribed contacts, no Plunk footer'},
+                  ] as const).map(({value, label, description}) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setEditedCampaign({...editedCampaign, type: value})}
+                      className={`flex items-center justify-between w-full min-h-[44px] px-4 py-3 rounded-lg border-2 text-left transition-colors ${
+                        (editedCampaign.type ?? c.type) === value
+                          ? 'border-neutral-900 bg-neutral-50'
+                          : 'border-neutral-200 hover:border-neutral-300'
+                      }`}
+                    >
+                      <span className="font-medium text-sm text-neutral-900 shrink-0">{label}</span>
+                      <span className="text-xs text-neutral-500 ml-4 text-right">{description}</span>
+                    </button>
+                  ))}
+                </div>
+                {(editedCampaign.type ?? c.type) === TemplateType.HEADLESS &&
+                  !detectUnsubscribeSignal(editedCampaign.body ?? c.body) && (
+                  <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 overflow-hidden">
+                    <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-100/60 px-3 py-2">
+                      <TriangleAlert className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                      <p className="text-xs font-semibold text-amber-900">No unsubscribe link detected</p>
                     </div>
-                    <div className="flex items-start gap-2">
-                      <Info className="h-3.5 w-3.5 text-blue-600 mt-0.5 flex-shrink-0" />
-                      <p className="text-xs text-blue-800">
-                        This count will be recalculated right before sending to ensure accuracy. The final number may
-                        differ if contacts{' '}
-                        {(editedCampaign.type ?? c.type) === TemplateType.TRANSACTIONAL
-                          ? 'are added or removed, or segment membership changes.'
-                          : 'subscribe, unsubscribe, or segment membership changes.'
-                        }
+                    <div className="px-3 py-2.5 space-y-2">
+                      <p className="text-xs text-amber-800 leading-relaxed">
+                        You are responsible for providing recipients a way to opt out. Use the Plunk variables below to build your own footer.
                       </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        <code className="inline-flex items-center rounded bg-amber-100 border border-amber-200 px-1.5 py-0.5 font-mono text-[11px] text-amber-900">
+                          {'{{unsubscribeUrl}}'}
+                        </code>
+                        <code className="inline-flex items-center rounded bg-amber-100 border border-amber-200 px-1.5 py-0.5 font-mono text-[11px] text-amber-900">
+                          {'{{manageUrl}}'}
+                        </code>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -646,11 +641,43 @@ export default function CampaignDetailsPage() {
             </Card>
           </div>
 
-          {/* Email Editor - Full Width */}
+          {/* Email Settings */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Email Settings</CardTitle>
+              <CardDescription>Configure sender information and subject</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <EmailSettings
+                from={editedCampaign.from || ''}
+                fromName={editedCampaign.fromName || ''}
+                replyTo={editedCampaign.replyTo || ''}
+                onFromChange={value => setEditedCampaign({...editedCampaign, from: value})}
+                onFromNameChange={value => setEditedCampaign({...editedCampaign, fromName: value})}
+                onReplyToChange={value => setEditedCampaign({...editedCampaign, replyTo: value})}
+                fromNamePlaceholder={activeProject?.name || 'Your Company'}
+              />
+
+              <div className="space-y-2">
+                <Label htmlFor="subject">
+                  Email Subject <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="subject"
+                  placeholder="e.g., Introducing our Spring Sale!"
+                  value={editedCampaign.subject || ''}
+                  onChange={e => setEditedCampaign({...editedCampaign, subject: e.target.value})}
+                  required
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Email Content */}
           <Card className="overflow-visible">
             <CardHeader>
               <CardTitle>Email Content</CardTitle>
-              <CardDescription>Design your email using the visual editor or paste custom HTML</CardDescription>
+              <CardDescription>Design your email message</CardDescription>
             </CardHeader>
             <CardContent>
               <EmailEditor
@@ -664,159 +691,191 @@ export default function CampaignDetailsPage() {
           </Card>
 
           {/* Test Email Dialog */}
-          <Dialog open={isTestEmailDialogOpen} onOpenChange={setIsTestEmailDialogOpen}>
-            <DialogContent className="sm:max-w-lg">
+          <Dialog open={dialog.type === 'testEmail'} onOpenChange={open => !open && setDialog({type: 'none'})}>
+            <DialogContent className="sm:max-w-md">
               <DialogHeader>
-                <DialogTitle>Send Test Email</DialogTitle>
+                <DialogTitle>Send a preview</DialogTitle>
                 <DialogDescription>
-                  Send a test version of this campaign to a project member to verify how it looks. The test email will
-                  be prefixed with [TEST] in the subject line.
+                  Get a copy of this campaign in your inbox before sending it for real.
                 </DialogDescription>
               </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div>
-                  <Label htmlFor="testEmail">Project Member</Label>
-                  <Select value={testEmailAddress} onValueChange={setTestEmailAddress}>
-                    <SelectTrigger id="testEmail" className="mt-2">
-                      <SelectValue placeholder="Select a project member..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {projectMembers?.data.map(member => (
-                        <SelectItem key={member.userId} value={member.email}>
-                          {member.email}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-neutral-500 mt-2">
-                    For security reasons, test emails can only be sent to project members.
-                  </p>
-                  <p className="text-xs text-neutral-500 mt-1">
-                    Note: Variables will not be replaced in test emails. The email will be sent exactly as designed.
-                  </p>
+
+              <div className="space-y-2">
+                <Label htmlFor="testEmail">Send to</Label>
+                <Select value={testEmailAddress} onValueChange={setTestEmailAddress}>
+                  <SelectTrigger id="testEmail">
+                    <SelectValue placeholder="Choose a teammate" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {projectMembers?.data.map(member => (
+                      <SelectItem key={member.userId} value={member.email}>
+                        {member.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Preview of how the email will arrive */}
+              <div className="space-y-2">
+                <Label className="text-neutral-500">Will arrive as</Label>
+                <div className="rounded-lg border border-neutral-200 bg-neutral-50 divide-y divide-neutral-200 text-sm">
+                  <div className="grid grid-cols-[64px_1fr] gap-3 px-3 py-2.5">
+                    <span className="text-neutral-500">From</span>
+                    <span className="text-neutral-900 truncate">{editedCampaign.from || c.from}</span>
+                  </div>
+                  <div className="grid grid-cols-[64px_1fr] gap-3 px-3 py-2.5">
+                    <span className="text-neutral-500">Subject</span>
+                    <span className="text-neutral-900 truncate">
+                      <span className="font-medium">[TEST]</span> {editedCampaign.subject || c.subject}
+                    </span>
+                  </div>
                 </div>
               </div>
+
+              <p className="text-xs text-neutral-500 leading-relaxed">
+                Variables like {'{{firstName}}'} aren{"'"}t replaced in previews. You{"'"}ll see them as written.
+              </p>
+
               <DialogFooter>
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => {
-                    setIsTestEmailDialogOpen(false);
+                    setDialog({type: 'none'});
                     setTestEmailAddress('');
                   }}
                 >
                   Cancel
                 </Button>
-                <Button type="button" onClick={handleSendTestEmail} disabled={sendingTestEmail || !testEmailAddress}>
-                  {sendingTestEmail ? 'Sending...' : 'Send Test Email'}
+                <Button
+                  type="button"
+                  onClick={handleSendTestEmail}
+                  disabled={(dialog.type === 'testEmail' && dialog.sending) || !testEmailAddress}
+                >
+                  <TestTube className="h-4 w-4" />
+                  {dialog.type === 'testEmail' && dialog.sending ? 'Sending...' : 'Send preview'}
                 </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
 
           {/* Schedule Dialog */}
-          <Dialog open={isScheduleDialogOpen} onOpenChange={setIsScheduleDialogOpen}>
-            <DialogContent className="sm:max-w-lg">
+          <Dialog open={dialog.type === 'schedule'} onOpenChange={open => !open && setDialog({type: 'none'})}>
+            <DialogContent className="sm:max-w-md">
               <DialogHeader>
-                <DialogTitle>Schedule Campaign</DialogTitle>
+                <DialogTitle>Schedule for later</DialogTitle>
                 <DialogDescription>
-                  Choose when you want this campaign to be sent (times shown in your local timezone: {getUserTimezone()}
-                  )
+                  Pick a time and Plunk will send it for you. Times shown in {getUserTimezone()}.
                 </DialogDescription>
               </DialogHeader>
-              <div className="space-y-4 py-4">
-                {/* Quick Presets */}
-                <div>
-                  <Label>Quick Schedule</Label>
-                  <div className="grid grid-cols-2 gap-2 mt-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setScheduledDateTime(schedulePresets.inOneHour())}
-                    >
-                      In 1 hour
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setScheduledDateTime(schedulePresets.inThreeHours())}
-                    >
-                      In 3 hours
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setScheduledDateTime(schedulePresets.tomorrowAt9AM())}
-                    >
-                      Tomorrow at 9 AM
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setScheduledDateTime(schedulePresets.tomorrowAt2PM())}
-                    >
-                      Tomorrow at 2 PM
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setScheduledDateTime(schedulePresets.nextMonday())}
-                    >
-                      Next Monday
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setScheduledDateTime(schedulePresets.inOneWeek())}
-                    >
-                      In 1 week
-                    </Button>
+
+              <div className="space-y-5 py-2">
+                {/* Quick presets */}
+                <div className="space-y-2">
+                  <Label>Quick options</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      {key: 'in1h', label: 'In 1 hour', getValue: schedulePresets.inOneHour},
+                      {key: 'in3h', label: 'In 3 hours', getValue: schedulePresets.inThreeHours},
+                      {key: 'tom9', label: 'Tomorrow, 9 AM', getValue: schedulePresets.tomorrowAt9AM},
+                      {key: 'tom2', label: 'Tomorrow, 2 PM', getValue: schedulePresets.tomorrowAt2PM},
+                      {key: 'nextMon', label: 'Next Monday', getValue: schedulePresets.nextMonday},
+                      {key: 'in1w', label: 'In 1 week', getValue: schedulePresets.inOneWeek},
+                    ].map(({key, label, getValue}) => {
+                      const isActive = selectedPreset === key;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => {
+                            setScheduledDateTime(getValue());
+                            setSelectedPreset(key);
+                          }}
+                          className={`min-h-[40px] px-3 py-2 rounded-lg border text-sm text-left transition-colors ${
+                            isActive
+                              ? 'border-neutral-900 bg-neutral-50 text-neutral-900 font-medium'
+                              : 'border-neutral-200 text-neutral-700 hover:border-neutral-400 hover:text-neutral-900'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
                 {/* Custom Date/Time */}
-                <div>
-                  <Label htmlFor="scheduledDateTime">Or choose a specific time</Label>
+                <div className="space-y-2">
+                  <Label htmlFor="scheduledDateTime">Or pick an exact time</Label>
                   <Input
                     id="scheduledDateTime"
                     type="datetime-local"
                     value={scheduledDateTime}
-                    onChange={e => setScheduledDateTime(e.target.value)}
+                    onChange={e => {
+                      setScheduledDateTime(e.target.value);
+                      setSelectedPreset(null);
+                    }}
                     min={new Date().toISOString().slice(0, 16)}
-                    className="mt-2"
                   />
-                  {scheduledDateTime && (
-                    <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                      <p className="text-xs font-medium text-blue-900 mb-1">Scheduled for:</p>
-                      <p className="text-sm text-blue-800">
-                        <span className="font-medium">{formatFullDateTime(new Date(scheduledDateTime))}</span>
-                      </p>
-                      <p className="text-xs text-blue-700 mt-1">
-                        UTC: {formatUTCDateTime(new Date(scheduledDateTime))}
+                </div>
+
+                {/* Confirmation preview — date + audience together */}
+                {scheduledDateTime && (
+                  <div className="rounded-lg border border-neutral-200 bg-neutral-50 divide-y divide-neutral-200">
+                    <div className="px-4 py-3">
+                      <div className="flex items-center gap-2 text-neutral-500">
+                        <Calendar className="h-3.5 w-3.5" />
+                        <span className="text-xs font-medium uppercase tracking-wide">Sending on</span>
+                      </div>
+                      <p className="mt-1 text-base font-semibold text-neutral-900">
+                        {formatFullDateTime(new Date(scheduledDateTime))}
                       </p>
                     </div>
-                  )}
-                </div>
+                    {draftRecipientCount > 0 && (
+                      <div className="px-4 py-3">
+                        <div className="flex items-center gap-2 text-neutral-500">
+                          <Users className="h-3.5 w-3.5" />
+                          <span className="text-xs font-medium uppercase tracking-wide">To</span>
+                        </div>
+                        <p className="mt-1 text-sm text-neutral-900">
+                          <span className="font-semibold tabular-nums">{draftRecipientCount.toLocaleString()}</span>
+                          <span className="text-neutral-600">
+                            {draftRecipientCount === 1 ? ' recipient in ' : ' recipients in '}
+                          </span>
+                          {(editedCampaign.audienceType ?? c.audienceType) === CampaignAudienceType.ALL &&
+                            ((editedCampaign.type ?? c.type) === TemplateType.TRANSACTIONAL
+                              ? 'all contacts'
+                              : 'all subscribed contacts')}
+                          {(editedCampaign.audienceType ?? c.audienceType) === CampaignAudienceType.SEGMENT &&
+                            (segments?.find(s => s.id === (editedCampaign.segmentId ?? c.segmentId))?.name ?? 'the selected segment')}
+                          {(editedCampaign.audienceType ?? c.audienceType) === CampaignAudienceType.FILTERED && 'filtered contacts'}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
+
+              <p className="text-xs text-neutral-500 leading-relaxed">
+                You can edit or cancel this campaign anytime before it sends.
+              </p>
+
               <DialogFooter>
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => {
-                    setIsScheduleDialogOpen(false);
+                    setDialog({type: 'none'});
                     setScheduledDateTime('');
+                    setSelectedPreset(null);
                   }}
                 >
-                  Cancel
+                  Not yet
                 </Button>
-                <Button type="button" onClick={handleSchedule}>
-                  Schedule Campaign
+                <Button type="button" onClick={handleSchedule} disabled={!scheduledDateTime}>
+                  <Calendar className="h-4 w-4" />
+                  Schedule send
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -824,21 +883,72 @@ export default function CampaignDetailsPage() {
         </form>
 
         {/* Sticky Save Bar */}
-        <StickySaveBar hasChanges={hasChanges} isSubmitting={isSubmitting} onSave={handleSave} />
+        <StickySaveBar status={isSubmitting ? 'saving' : hasChanges ? 'dirty' : 'idle'} onSave={handleSave} />
+
+        <Dialog open={dialog.type === 'send'} onOpenChange={open => !open && setDialog({type: 'none'})}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Ready to send?</DialogTitle>
+              <DialogDescription>Review the details below, then send when you{"'"}re ready.</DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-2">
+              {/* Hero: recipient count */}
+              <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-5 py-6 text-center">
+                <div className="flex items-center justify-center gap-2 text-neutral-500">
+                  <Users className="h-4 w-4" />
+                  <span className="text-xs font-medium uppercase tracking-wide">Recipients</span>
+                </div>
+                <div className="mt-1.5 text-4xl font-bold text-neutral-900 tabular-nums">
+                  {draftRecipientCount.toLocaleString()}
+                </div>
+                <div className="mt-1 text-xs text-neutral-500">
+                  {(editedCampaign.audienceType ?? c.audienceType) === CampaignAudienceType.ALL &&
+                    ((editedCampaign.type ?? c.type) === TemplateType.TRANSACTIONAL
+                      ? 'All contacts'
+                      : 'All subscribed contacts')}
+                  {(editedCampaign.audienceType ?? c.audienceType) === CampaignAudienceType.SEGMENT &&
+                    (segments?.find(s => s.id === (editedCampaign.segmentId ?? c.segmentId))?.name ?? 'Selected segment')}
+                  {(editedCampaign.audienceType ?? c.audienceType) === CampaignAudienceType.FILTERED && 'Filtered contacts'}
+                </div>
+              </div>
+
+              {/* Compact summary */}
+              <div className="rounded-lg border border-neutral-200 divide-y divide-neutral-200 text-sm">
+                <div className="grid grid-cols-[80px_1fr] gap-3 px-3 py-2.5">
+                  <span className="text-neutral-500">From</span>
+                  <span className="text-neutral-900 truncate">{editedCampaign.from || c.from}</span>
+                </div>
+                <div className="grid grid-cols-[80px_1fr] gap-3 px-3 py-2.5">
+                  <span className="text-neutral-500">Subject</span>
+                  <span className="text-neutral-900 truncate">{editedCampaign.subject || c.subject}</span>
+                </div>
+              </div>
+
+              {/* Reassurance */}
+              <div className="flex items-start gap-2 rounded-lg bg-neutral-50 px-3 py-2.5">
+                <Info className="h-4 w-4 text-neutral-500 mt-0.5 shrink-0" />
+                <p className="text-xs text-neutral-600 leading-relaxed">
+                  Sending takes a few minutes. You can cancel the campaign at any time while it{"'"}s still sending.
+                </p>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDialog({type: 'none'})}>
+                Not yet
+              </Button>
+              <Button onClick={async () => { await handleSend(); setDialog({type: 'none'}); }}>
+                <Send className="h-4 w-4" />
+                Send to {draftRecipientCount.toLocaleString()} {draftRecipientCount === 1 ? 'contact' : 'contacts'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <ConfirmDialog
-          open={showSendDialog}
-          onOpenChange={setShowSendDialog}
-          onConfirm={handleSend}
-          title="Send Campaign"
-          description="Are you sure you want to send this campaign now? This action cannot be undone."
-          confirmText="Send Now"
-          variant="default"
-        />
-
-        <ConfirmDialog
-          open={showDeleteDialog}
-          onOpenChange={setShowDeleteDialog}
+          open={dialog.type === 'delete'}
+          onOpenChange={open => !open && setDialog({type: 'none'})}
           onConfirm={handleDelete}
           title="Delete Campaign"
           description="Are you sure you want to delete this draft campaign? This action cannot be undone."
@@ -852,15 +962,14 @@ export default function CampaignDetailsPage() {
   // Render stats view for sent/scheduled campaigns
   return (
     <DashboardLayout>
+      <NextSeo title={campaign.data.name} />
       <div className="space-y-6">
         {/* Header */}
         <div className="space-y-4">
           <div className="flex items-center gap-3 sm:gap-4">
-            <Link href="/campaigns">
-              <Button variant="ghost" size="sm">
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-            </Link>
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/campaigns"><ArrowLeft className="h-4 w-4" /></Link>
+            </Button>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 sm:gap-3 mb-2">
                 <h1 className="text-2xl sm:text-3xl font-bold text-neutral-900 truncate">{c.name}</h1>
@@ -873,7 +982,7 @@ export default function CampaignDetailsPage() {
           {/* Actions */}
           {(c.status === CampaignStatus.SCHEDULED || c.status === CampaignStatus.SENDING) && (
             <div className="flex justify-end">
-              <Button variant="destructive" onClick={() => setShowCancelDialog(true)} className="w-full sm:w-auto">
+              <Button variant="destructive" onClick={() => setDialog({type: 'cancel'})} className="w-full sm:w-auto">
                 <XCircle className="h-4 w-4" />
                 <span className="hidden sm:inline">Cancel Campaign</span>
                 <span className="sm:hidden">Cancel</span>
@@ -884,30 +993,30 @@ export default function CampaignDetailsPage() {
 
         {/* Sending Progress Banner */}
         {c.status === CampaignStatus.SENDING && s && (
-          <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+          <Card>
             <CardContent className="pt-6">
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-semibold text-neutral-900 text-lg">Sending in progress</h3>
-                    <p className="text-sm text-neutral-600 mt-1">
+                    <p className="text-sm text-neutral-500 mt-1">
                       {s.sentCount.toLocaleString()} of {s.totalRecipients.toLocaleString()} emails sent
                     </p>
                   </div>
                   <div className="text-right">
-                    <div className="text-3xl font-bold text-blue-600">
+                    <div className="text-3xl font-bold text-neutral-900">
                       {((s.sentCount / s.totalRecipients) * 100).toFixed(0)}%
                     </div>
                     <p className="text-xs text-neutral-500 mt-1">Complete</p>
                   </div>
                 </div>
-                <div className="w-full bg-neutral-200 rounded-full h-3">
+                <div className="w-full bg-neutral-100 rounded-full h-2">
                   <div
-                    className="bg-blue-500 h-3 rounded-full transition-all duration-500"
+                    className="bg-neutral-900 h-2 rounded-full transition-all duration-500"
                     style={{width: `${(s.sentCount / s.totalRecipients) * 100}%`}}
                   />
                 </div>
-                <p className="text-xs text-neutral-500">This page updates automatically every 5 seconds</p>
+                <p className="text-xs text-neutral-400">This page updates automatically every 5 seconds</p>
               </div>
             </CardContent>
           </Card>
@@ -916,12 +1025,10 @@ export default function CampaignDetailsPage() {
         {/* Stats Cards */}
         {s && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card className="border-l-4 border-l-blue-500">
+            <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-neutral-600">Total Recipients</CardTitle>
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <Users className="h-4 w-4 text-blue-600" />
-                </div>
+                <CardTitle className="text-sm font-medium text-neutral-500">Total Recipients</CardTitle>
+                <Users className="h-4 w-4 text-neutral-400" />
               </CardHeader>
               <CardContent>
                 <div className="text-3xl font-bold text-neutral-900">{s.totalRecipients.toLocaleString()}</div>
@@ -931,12 +1038,10 @@ export default function CampaignDetailsPage() {
               </CardContent>
             </Card>
 
-            <Card className="border-l-4 border-l-green-500">
+            <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-neutral-600">Delivery Rate</CardTitle>
-                <div className="p-2 bg-green-100 rounded-lg">
-                  <Mail className="h-4 w-4 text-green-600" />
-                </div>
+                <CardTitle className="text-sm font-medium text-neutral-500">Delivery Rate</CardTitle>
+                <Mail className="h-4 w-4 text-neutral-400" />
               </CardHeader>
               <CardContent>
                 <div className="text-3xl font-bold text-neutral-900">{s.deliveryRate.toFixed(1)}%</div>
@@ -947,12 +1052,10 @@ export default function CampaignDetailsPage() {
               </CardContent>
             </Card>
 
-            <Card className="border-l-4 border-l-purple-500">
+            <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-neutral-600">Open Rate</CardTitle>
-                <div className="p-2 bg-purple-100 rounded-lg">
-                  <TrendingUp className="h-4 w-4 text-purple-600" />
-                </div>
+                <CardTitle className="text-sm font-medium text-neutral-500">Open Rate</CardTitle>
+                <TrendingUp className="h-4 w-4 text-neutral-400" />
               </CardHeader>
               <CardContent>
                 <div className="text-3xl font-bold text-neutral-900">{s.openRate.toFixed(1)}%</div>
@@ -960,12 +1063,10 @@ export default function CampaignDetailsPage() {
               </CardContent>
             </Card>
 
-            <Card className="border-l-4 border-l-orange-500">
+            <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-neutral-600">Click Rate</CardTitle>
-                <div className="p-2 bg-orange-100 rounded-lg">
-                  <MousePointer className="h-4 w-4 text-orange-600" />
-                </div>
+                <CardTitle className="text-sm font-medium text-neutral-500">Click Rate</CardTitle>
+                <MousePointer className="h-4 w-4 text-neutral-400" />
               </CardHeader>
               <CardContent>
                 <div className="text-3xl font-bold text-neutral-900">{s.clickRate.toFixed(1)}%</div>
@@ -1011,7 +1112,7 @@ export default function CampaignDetailsPage() {
                 <p className="text-sm font-medium text-neutral-700 mb-3">Message Content</p>
                 <div className="border-2 border-neutral-200 rounded-lg overflow-hidden bg-white">
                   <div className="p-6 max-h-96 overflow-y-auto">
-                    <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{__html: c.body}} />
+                    <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{__html: DOMPurify.sanitize(c.body)}} />
                   </div>
                 </div>
               </div>
@@ -1063,10 +1164,7 @@ export default function CampaignDetailsPage() {
                         </p>
                       </div>
                       {c.status === CampaignStatus.SCHEDULED && (
-                        <div className="flex items-start gap-1.5 p-2 bg-blue-50 border border-blue-200 rounded">
-                          <Info className="h-3 w-3 text-blue-600 mt-0.5 flex-shrink-0" />
-                          <p className="text-xs text-blue-800">Recipient count will be recalculated at send time</p>
-                        </div>
+                        <p className="text-xs text-neutral-500">Recipient count will be recalculated at send time</p>
                       )}
                     </div>
                   </div>
@@ -1089,8 +1187,8 @@ export default function CampaignDetailsPage() {
       </div>
 
       <ConfirmDialog
-        open={showCancelDialog}
-        onOpenChange={setShowCancelDialog}
+        open={dialog.type === 'cancel'}
+        onOpenChange={open => !open && setDialog({type: 'none'})}
         onConfirm={handleCancel}
         title="Cancel Campaign"
         description="Are you sure you want to cancel this campaign?"

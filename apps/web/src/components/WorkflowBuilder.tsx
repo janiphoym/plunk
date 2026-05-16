@@ -12,18 +12,20 @@ import {
   ReactFlow,
   useEdgesState,
   useNodesState,
-  useReactFlow,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import type {WorkflowStep} from '@plunk/db';
 import {
   Clock,
+  ExternalLink,
   GitBranch,
   Hourglass,
   Lightbulb,
   Link,
   LogOut,
   Mail,
+  Maximize2,
+  Minimize2,
   Plus,
   Settings,
   Timer,
@@ -35,7 +37,7 @@ import {useCallback, useEffect, useMemo, useState} from 'react';
 import dagre from 'dagre';
 import {network} from '../lib/network';
 import {toast} from 'sonner';
-import {Button, ConfirmDialog, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle} from '@plunk/ui';
+import {Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle} from '@plunk/ui';
 import {WorkflowSchemas} from '@plunk/shared';
 
 interface WorkflowBuilderProps {
@@ -57,6 +59,17 @@ interface WorkflowBuilderProps {
   })[];
   onUpdate: () => void;
 }
+
+const STEP_TYPE_LABELS: Record<string, string> = {
+  TRIGGER: 'Trigger',
+  SEND_EMAIL: 'Send Email',
+  DELAY: 'Delay',
+  WAIT_FOR_EVENT: 'Wait for Event',
+  CONDITION: 'Condition',
+  EXIT: 'Exit',
+  WEBHOOK: 'Webhook',
+  UPDATE_CONTACT: 'Update Contact',
+};
 
 const STEP_TYPE_ICONS = {
   TRIGGER: GitBranch,
@@ -209,8 +222,8 @@ function AddStepNode({data}: {data: {label: string; onClick?: () => void}}) {
       />
 
       <div className="cursor-pointer hover:scale-105 transition-transform" onClick={data.onClick}>
-        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-neutral-100 to-neutral-200 border-2 border-dashed border-neutral-400 hover:border-neutral-600 hover:from-blue-50 hover:to-blue-100 hover:border-blue-400 flex items-center justify-center shadow-md transition-all">
-          <Plus className="h-8 w-8 text-neutral-500 transition-colors" />
+        <div className="w-16 h-16 rounded-full bg-neutral-100 border-2 border-dashed border-neutral-400 hover:border-neutral-600 hover:bg-white flex items-center justify-center transition-all">
+          <Plus className="h-8 w-8 text-neutral-500 hover:text-neutral-700 transition-colors" />
         </div>
         {data.label && <div className="text-xs text-neutral-500 text-center mt-2 font-medium">{data.label}</div>}
       </div>
@@ -231,7 +244,7 @@ function CustomNode({
     bgColor?: string;
     onEdit?: () => void;
     onDelete?: () => void;
-    template?: {name: string};
+    template?: {id: string; name: string};
     config?: any;
   };
 }) {
@@ -245,17 +258,11 @@ function CustomNode({
       <Handle
         type="target"
         position={Position.Top}
-        style={{
-          background: color,
-          width: 14,
-          height: 14,
-          border: '2px solid white',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-        }}
+        style={{opacity: 0, cursor: 'default', pointerEvents: 'none'}}
       />
 
       <div
-        className="px-5 py-4 rounded-xl border-2 bg-white shadow-lg hover:shadow-xl transition-all relative group"
+        className="px-5 py-4 rounded-xl border-2 bg-white shadow-sm hover:shadow-md transition-all relative group"
         style={{
           borderColor: color,
           minWidth: '280px',
@@ -274,7 +281,7 @@ function CustomNode({
               }}
               variant="outline"
               size="icon"
-              className="h-7 w-7 shadow-md"
+              className="h-7 w-7"
               title="Edit trigger settings"
             >
               <Settings className="h-3.5 w-3.5" />
@@ -290,7 +297,7 @@ function CustomNode({
               }}
               variant="outline"
               size="icon"
-              className="h-7 w-7 shadow-md"
+              className="h-7 w-7"
               title="Edit step"
             >
               <Settings className="h-3.5 w-3.5" />
@@ -302,7 +309,7 @@ function CustomNode({
               }}
               variant="outline"
               size="icon"
-              className="h-7 w-7 shadow-md hover:bg-red-50 hover:border-red-400"
+              className="h-7 w-7 hover:bg-red-50 hover:border-red-400"
               title="Delete step"
             >
               <Trash2 className="h-3.5 w-3.5" />
@@ -327,7 +334,7 @@ function CustomNode({
                 color,
               }}
             >
-              {data.type}
+              {STEP_TYPE_LABELS[data.type] ?? data.type}
             </span>
           </div>
         </div>
@@ -335,10 +342,19 @@ function CustomNode({
         {/* Details */}
         {data.template && (
           <div className="mt-3 pt-3 border-t border-neutral-100">
-            <div className="flex items-center gap-2 text-xs text-neutral-600">
-              <Mail className="h-3 w-3" />
-              <span className="truncate">{data.template.name}</span>
-            </div>
+            <a
+              href={`/templates/${data.template.id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+              onMouseDown={e => e.stopPropagation()}
+              className="nodrag flex items-center gap-2 text-xs text-neutral-600 hover:text-blue-600 hover:bg-blue-50 -mx-2 px-2 py-1 rounded transition-colors group/template"
+              title="Open template in a new tab"
+            >
+              <Mail className="h-3 w-3 shrink-0" />
+              <span className="truncate flex-1">{data.template.name}</span>
+              <ExternalLink className="h-3 w-3 shrink-0 opacity-0 group-hover/template:opacity-100 transition-opacity" />
+            </a>
           </div>
         )}
         {data.type === 'DELAY' && data.config?.amount && (
@@ -407,13 +423,7 @@ function CustomNode({
       <Handle
         type="source"
         position={Position.Bottom}
-        style={{
-          background: color,
-          width: 14,
-          height: 14,
-          border: '2px solid white',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-        }}
+        style={{opacity: 0, cursor: 'default', pointerEvents: 'none'}}
       />
     </>
   );
@@ -436,13 +446,23 @@ const STEP_TYPE_OPTIONS = [
 ];
 
 export function WorkflowBuilder({workflowId, steps, onUpdate}: WorkflowBuilderProps) {
-  const reactFlowInstance = useReactFlow();
   const [addStepContext, setAddStepContext] = useState<{
     fromStepId: string | null;
     branch?: string;
   } | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [stepToDelete, setStepToDelete] = useState<string | null>(null);
+  const [deleteMode, setDeleteMode] = useState<'splice' | 'cascade'>('splice');
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!isExpanded) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsExpanded(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isExpanded]);
 
   // Define handlers before they are used in useMemo
   const handleEditStep = useCallback(
@@ -463,10 +483,17 @@ export function WorkflowBuilder({workflowId, steps, onUpdate}: WorkflowBuilderPr
     [steps],
   );
 
-  const handleDeleteStepClick = useCallback((stepId: string) => {
-    setStepToDelete(stepId);
-    setShowDeleteDialog(true);
-  }, []);
+  const handleDeleteStepClick = useCallback(
+    (stepId: string) => {
+      const step = steps.find(s => s.id === stepId);
+      const isCondition = step?.type === 'CONDITION';
+      const hasChildren = (step?.outgoingTransitions?.length ?? 0) > 0;
+      setDeleteMode(isCondition || !hasChildren ? 'cascade' : 'splice');
+      setStepToDelete(stepId);
+      setShowDeleteDialog(true);
+    },
+    [steps],
+  );
 
   // Convert workflow steps to React Flow nodes
 
@@ -564,7 +591,7 @@ export function WorkflowBuilder({workflowId, steps, onUpdate}: WorkflowBuilderPr
             source: step.id,
             target: transition.toStepId,
             type: 'smoothstep',
-            animated: step.type === 'DELAY' || step.type === 'WAIT_FOR_EVENT',
+            animated: false,
             label: isConditional ? branchLabel : undefined,
             labelStyle: {
               fill: isConditional ? branchColor : '#64748b',
@@ -578,14 +605,14 @@ export function WorkflowBuilder({workflowId, steps, onUpdate}: WorkflowBuilderPr
             labelBgPadding: [8, 4] as [number, number],
             labelBgBorderRadius: 4,
             style: {
-              stroke: isConditional ? branchColor : '#94a3b8',
-              strokeWidth: 2.5,
+              stroke: '#94a3b8',
+              strokeWidth: 2,
             },
             markerEnd: {
               type: MarkerType.ArrowClosed,
-              color: isConditional ? branchColor : '#94a3b8',
-              width: 22,
-              height: 22,
+              color: '#94a3b8',
+              width: 20,
+              height: 20,
             },
           });
         });
@@ -621,8 +648,8 @@ export function WorkflowBuilder({workflowId, steps, onUpdate}: WorkflowBuilderPr
               labelBgStyle: {fill: '#fff', fillOpacity: 0.95},
               labelBgPadding: [8, 4] as [number, number],
               labelBgBorderRadius: 4,
-              style: {stroke: color, strokeWidth: 2.5, strokeDasharray: '5,5'},
-              markerEnd: {type: MarkerType.ArrowClosed, color, width: 22, height: 22},
+              style: {stroke: '#94a3b8', strokeWidth: 2, strokeDasharray: '5,5'},
+              markerEnd: {type: MarkerType.ArrowClosed, color: '#94a3b8', width: 20, height: 20},
             });
           }
         });
@@ -632,10 +659,10 @@ export function WorkflowBuilder({workflowId, steps, onUpdate}: WorkflowBuilderPr
             id: `${step.id}-add-edge`,
             source: step.id,
             target: `${step.id}-add`,
-            type: 'straight',
+            type: 'smoothstep',
             animated: false,
-            style: {stroke: '#94a3b8', strokeWidth: 2.5, strokeDasharray: '5,5'},
-            markerEnd: {type: MarkerType.ArrowClosed, color: '#94a3b8', width: 22, height: 22},
+            style: {stroke: '#94a3b8', strokeWidth: 2, strokeDasharray: '5,5'},
+            markerEnd: {type: MarkerType.ArrowClosed, color: '#94a3b8', width: 20, height: 20},
           });
         }
       }
@@ -653,70 +680,6 @@ export function WorkflowBuilder({workflowId, steps, onUpdate}: WorkflowBuilderPr
   const [nodes, setNodes, onNodesChange] = useNodesState(layoutedNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(layoutedEdges);
 
-  // Custom nodes change handler that updates "+" node positions when parent nodes move
-  const handleNodesChange = useCallback(
-    (changes: any[]) => {
-      onNodesChange(changes);
-
-      // Check if any position changes occurred
-      const positionChanges = changes.filter(change => change.type === 'position' && change.dragging);
-      if (positionChanges.length > 0) {
-        setNodes(currentNodes => {
-          const updatedNodes = [...currentNodes];
-          const nodeWidth = 280;
-
-          positionChanges.forEach((change: any) => {
-            const movedNode = updatedNodes.find(n => n.id === change.id);
-            if (movedNode && movedNode.type === 'custom' && change.position) {
-              // Find all "+" nodes connected to this parent node
-              const connectedAddNodes = updatedNodes.filter(node => {
-                if (node.type !== 'addStep') return false;
-                // Check if this add node is connected to the moved node
-                return node.id === `${movedNode.id}-add` || node.id.startsWith(`${movedNode.id}-add-`);
-              });
-
-              // Update positions of connected "+" nodes to stay below parent
-              if (connectedAddNodes.length === 1) {
-                // Single add node — center below parent
-                const addNode = connectedAddNodes[0]!;
-                const addNodeIndex = updatedNodes.findIndex(n => n.id === addNode.id);
-                if (addNodeIndex !== -1 && updatedNodes[addNodeIndex]) {
-                  const existingNode = updatedNodes[addNodeIndex];
-                  updatedNodes[addNodeIndex] = {
-                    ...existingNode,
-                    position: {
-                      x: change.position.x + nodeWidth / 2 - 32, // Center below parent
-                      y: existingNode.position.y,
-                    },
-                  };
-                }
-              } else if (connectedAddNodes.length > 1) {
-                // Multiple branches — move all add nodes by the same delta as the parent
-                const oldX = movedNode.position.x;
-                const deltaX = change.position.x - oldX;
-                connectedAddNodes.forEach(addNode => {
-                  const addNodeIndex = updatedNodes.findIndex(n => n.id === addNode.id);
-                  if (addNodeIndex !== -1 && updatedNodes[addNodeIndex]) {
-                    const existingNode = updatedNodes[addNodeIndex];
-                    updatedNodes[addNodeIndex] = {
-                      ...existingNode,
-                      position: {
-                        x: existingNode.position.x + deltaX,
-                        y: existingNode.position.y,
-                      },
-                    };
-                  }
-                });
-              }
-            }
-          });
-
-          return updatedNodes;
-        });
-      }
-    },
-    [onNodesChange, setNodes],
-  );
 
   // Update nodes/edges when layout changes
   useEffect(() => {
@@ -839,13 +802,24 @@ export function WorkflowBuilder({workflowId, steps, onUpdate}: WorkflowBuilderPr
     if (!stepToDelete) return;
 
     try {
-      await network.fetch('DELETE', `/workflows/${workflowId}/steps/${stepToDelete}`);
-      const affectedSteps = getAffectedSteps(stepToDelete);
-      if (affectedSteps.length > 1) {
-        toast.success(`Deleted ${affectedSteps.length} steps`);
+      const url =
+        deleteMode === 'splice'
+          ? `/workflows/${workflowId}/steps/${stepToDelete}?splice=true`
+          : `/workflows/${workflowId}/steps/${stepToDelete}`;
+
+      await network.fetch('DELETE', url);
+
+      if (deleteMode === 'cascade') {
+        const affectedSteps = getAffectedSteps(stepToDelete);
+        if (affectedSteps.length > 1) {
+          toast.success(`Deleted ${affectedSteps.length} steps`);
+        } else {
+          toast.success('Step deleted');
+        }
       } else {
-        toast.success('Step deleted');
+        toast.success('Step removed from flow');
       }
+
       onUpdate();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to delete step');
@@ -854,17 +828,6 @@ export function WorkflowBuilder({workflowId, steps, onUpdate}: WorkflowBuilderPr
     }
   };
 
-  // Auto-layout on demand
-  const handleAutoLayout = useCallback(() => {
-    const {nodes: newNodes, edges: newEdges} = getLayoutedElements(nodes, edges);
-    setNodes(newNodes);
-    setEdges(newEdges);
-
-    // Fit view after layout
-    setTimeout(() => {
-      reactFlowInstance?.fitView({padding: 0.3});
-    }, 10);
-  }, [nodes, edges, setNodes, setEdges, reactFlowInstance]);
 
   if (steps.length === 0) {
     return (
@@ -878,11 +841,23 @@ export function WorkflowBuilder({workflowId, steps, onUpdate}: WorkflowBuilderPr
 
   return (
     <>
-      <div className="w-full h-[800px] bg-neutral-50 rounded-lg border border-neutral-200 shadow-inner relative">
+      {isExpanded && (
+        <div
+          className="fixed inset-0 z-40 bg-black/40"
+          onClick={() => setIsExpanded(false)}
+        />
+      )}
+      <div
+        className={
+          isExpanded
+            ? 'fixed inset-[5%] z-50 bg-neutral-50 rounded-xl border border-neutral-200 shadow-2xl'
+            : 'w-full h-[800px] bg-neutral-50 rounded-lg border border-neutral-200 shadow-inner relative'
+        }
+      >
         <ReactFlow
           nodes={nodes}
           edges={edges}
-          onNodesChange={handleNodesChange}
+          onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
           fitView
@@ -893,7 +868,7 @@ export function WorkflowBuilder({workflowId, steps, onUpdate}: WorkflowBuilderPr
           }}
           minZoom={0.1}
           maxZoom={2}
-          nodesDraggable={true}
+          nodesDraggable={false}
           nodesConnectable={false}
           elementsSelectable={true}
           defaultEdgeOptions={{
@@ -905,19 +880,19 @@ export function WorkflowBuilder({workflowId, steps, onUpdate}: WorkflowBuilderPr
           <Background color="#e5e7eb" gap={16} size={1} />
           <Controls
             showInteractive={false}
-            className="bg-white/90 backdrop-blur-sm border border-neutral-200 rounded-lg shadow-lg"
+            className="bg-white border border-neutral-200 rounded-lg shadow-md"
           />
           <MiniMap
             nodeColor={node => {
               const step = steps.find(s => s.id === node.id);
               return step ? STEP_TYPE_COLORS[step.type as keyof typeof STEP_TYPE_COLORS] : '#6b7280';
             }}
-            className="bg-white/90 backdrop-blur-sm border border-neutral-200 rounded-lg shadow-lg"
+            className="bg-white border border-neutral-200 rounded-lg shadow-md"
             maskColor="rgba(0, 0, 0, 0.05)"
           />
           <Panel
             position="top-left"
-            className="bg-white/95 backdrop-blur-sm px-4 py-2.5 rounded-lg shadow-lg border border-neutral-200"
+            className="bg-white px-4 py-2.5 rounded-lg shadow-md border border-neutral-200"
           >
             <div className="flex items-center gap-3">
               <GitBranch className="h-4 w-4 text-neutral-700" />
@@ -930,22 +905,27 @@ export function WorkflowBuilder({workflowId, steps, onUpdate}: WorkflowBuilderPr
               </div>
             </div>
           </Panel>
-          <Panel position="top-right" className="flex gap-2">
+          <Panel position="top-right">
             <button
-              onClick={handleAutoLayout}
-              className="bg-white/95 backdrop-blur-sm px-4 py-2 rounded-lg shadow-lg border border-neutral-200 text-sm font-medium text-neutral-700 hover:bg-white hover:text-neutral-900 transition-all"
+              onClick={() => setIsExpanded(e => !e)}
+              className="bg-white border border-neutral-200 rounded-lg shadow-md p-2 hover:bg-neutral-50 transition-colors"
+              title={isExpanded ? 'Exit fullscreen' : 'Expand to fullscreen'}
             >
-              Auto Layout
+              {isExpanded ? (
+                <Minimize2 className="h-4 w-4 text-neutral-600" />
+              ) : (
+                <Maximize2 className="h-4 w-4 text-neutral-600" />
+              )}
             </button>
           </Panel>
-          {rawEdges.length === 0 && steps.length > 1 && (
+{rawEdges.length === 0 && steps.length > 1 && (
             <Panel
               position="bottom-center"
-              className="bg-blue-50 border border-blue-200 px-4 py-2.5 rounded-lg shadow-lg"
+              className="bg-white border border-neutral-200 px-4 py-2.5 rounded-lg shadow-sm"
             >
-              <div className="flex items-center gap-2 text-sm text-blue-900">
+              <div className="flex items-center gap-2 text-sm text-neutral-600">
                 <Lightbulb className="h-4 w-4" />
-                <span>Click the + buttons to add and connect steps!</span>
+                <span>Click the + buttons to add and connect steps.</span>
               </div>
             </Panel>
           )}
@@ -965,16 +945,7 @@ export function WorkflowBuilder({workflowId, steps, onUpdate}: WorkflowBuilderPr
                 <button
                   key={option.value}
                   onClick={() => handleCreateStep(option.value)}
-                  className="flex flex-col items-center gap-2 p-4 rounded-lg border-2 border-neutral-200 hover:border-neutral-400 hover:bg-neutral-50 transition-all group"
-                  style={{
-                    borderColor: 'transparent',
-                  }}
-                  onMouseEnter={e => {
-                    e.currentTarget.style.borderColor = option.color;
-                  }}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.borderColor = 'transparent';
-                  }}
+                  className="flex flex-col items-center gap-2 p-4 rounded-lg border border-neutral-200 hover:border-neutral-400 hover:bg-neutral-50 transition-all group"
                 >
                   <div
                     className="w-12 h-12 rounded-lg flex items-center justify-center transition-transform group-hover:scale-110"
@@ -1002,36 +973,91 @@ export function WorkflowBuilder({workflowId, steps, onUpdate}: WorkflowBuilderPr
           const affectedSteps = getAffectedSteps(stepToDelete);
           const stepToDeleteData = steps.find(s => s.id === stepToDelete);
           const downstreamSteps = affectedSteps.filter(s => s.id !== stepToDelete);
+          const isCondition = stepToDeleteData?.type === 'CONDITION';
+          const hasChildren = downstreamSteps.length > 0;
+          const canSplice = !isCondition && hasChildren;
 
           return (
-            <ConfirmDialog
-              open={showDeleteDialog}
-              onOpenChange={setShowDeleteDialog}
-              onConfirm={handleDeleteStep}
-              title="Delete Step"
-              description={
-                downstreamSteps.length > 0 ? (
-                  <div className="space-y-3">
-                    <p>
-                      Deleting &quot;{stepToDeleteData?.name}&quot; will also delete {downstreamSteps.length} downstream{' '}
-                      {downstreamSteps.length === 1 ? 'step' : 'steps'}:
+            <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Remove &quot;{stepToDeleteData?.name}&quot;</DialogTitle>
+                </DialogHeader>
+
+                {canSplice ? (
+                  <div className="space-y-3 py-1">
+                    <p className="text-sm text-neutral-600">How would you like to remove this step?</p>
+                    <div className="space-y-2">
+                      <button
+                        onClick={() => setDeleteMode('splice')}
+                        className={`w-full text-left p-3 rounded-lg border-2 transition-colors ${
+                          deleteMode === 'splice'
+                            ? 'border-neutral-900 bg-neutral-50'
+                            : 'border-neutral-200 hover:border-neutral-300'
+                        }`}
+                      >
+                        <p className="text-sm font-medium text-neutral-900">Remove from flow</p>
+                        <p className="text-xs text-neutral-500 mt-0.5">
+                          Delete this step and connect its parent directly to its child. The rest of the workflow is
+                          preserved.
+                        </p>
+                      </button>
+                      <button
+                        onClick={() => setDeleteMode('cascade')}
+                        className={`w-full text-left p-3 rounded-lg border-2 transition-colors ${
+                          deleteMode === 'cascade'
+                            ? 'border-red-500 bg-red-50'
+                            : 'border-neutral-200 hover:border-neutral-300'
+                        }`}
+                      >
+                        <p className="text-sm font-medium text-neutral-900">
+                          Delete with {downstreamSteps.length} downstream {downstreamSteps.length === 1 ? 'step' : 'steps'}
+                        </p>
+                        <p className="text-xs text-neutral-500 mt-0.5">
+                          Permanently removes this step and everything below it. This cannot be undone.
+                        </p>
+                      </button>
+                    </div>
+                  </div>
+                ) : isCondition && hasChildren ? (
+                  <div className="space-y-3 py-1">
+                    <p className="text-sm text-neutral-600">
+                      Removing a condition step will also delete all {downstreamSteps.length} downstream{' '}
+                      {downstreamSteps.length === 1 ? 'step' : 'steps'} across its branches:
                     </p>
                     <ul className="list-disc list-inside text-sm text-neutral-600 max-h-32 overflow-y-auto bg-neutral-50 p-3 rounded border border-neutral-200">
                       {downstreamSteps.map(step => (
                         <li key={step.id}>
-                          {step.name} ({step.type})
+                          {step.name} ({STEP_TYPE_LABELS[step.type] ?? step.type})
                         </li>
                       ))}
                     </ul>
                     <p className="text-sm font-medium text-red-600">This action cannot be undone.</p>
                   </div>
                 ) : (
-                  `Are you sure you want to delete "${stepToDeleteData?.name}"? This action cannot be undone.`
-                )
-              }
-              confirmText={downstreamSteps.length > 0 ? `Delete ${affectedSteps.length} Steps` : 'Delete'}
-              variant="destructive"
-            />
+                  <p className="text-sm text-neutral-600 py-1">
+                    Are you sure you want to delete this step? This action cannot be undone.
+                  </p>
+                )}
+
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    variant={deleteMode === 'cascade' || !canSplice ? 'destructive' : 'default'}
+                    onClick={() => {
+                      setShowDeleteDialog(false);
+                      handleDeleteStep();
+                    }}
+                  >
+                    {canSplice && deleteMode === 'splice'
+                      ? 'Remove from flow'
+                      : `Delete ${hasChildren ? `${affectedSteps.length} steps` : 'step'}`}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           );
         })()}
     </>

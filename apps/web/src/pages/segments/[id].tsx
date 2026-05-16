@@ -1,4 +1,5 @@
 import {
+  Badge,
   Button,
   Card,
   CardContent,
@@ -6,6 +7,8 @@ import {
   CardHeader,
   CardTitle,
   ConfirmDialog,
+  EmptyState,
+  IconSpinner,
   Input,
   Label,
 } from '@plunk/ui';
@@ -13,12 +16,13 @@ import type {Contact, Segment} from '@plunk/db';
 import type {PaginatedResponse} from '@plunk/types';
 import {DashboardLayout} from '../../components/DashboardLayout';
 import {network} from '../../lib/network';
-import {ArrowLeft, Database, Filter, MailCheck, MailX, RefreshCw, Save, Trash2, UserMinus, Users} from 'lucide-react';
+import {ArrowLeft, Database, Filter, Layers, MailCheck, MailX, RefreshCw, Save, Trash2, UserMinus, Users} from 'lucide-react';
 import Link from 'next/link';
 import {useRouter} from 'next/router';
 import {useEffect, useState} from 'react';
 import {toast} from 'sonner';
 import useSWR from 'swr';
+import {NextSeo} from 'next-seo';
 import type {FilterCondition} from '@plunk/types';
 import {SegmentSchemas} from '@plunk/shared';
 import {SegmentFilterBuilder} from '../../components/SegmentFilterBuilder';
@@ -123,21 +127,19 @@ export default function SegmentDetailPage() {
     }
   };
 
-  const handleAddMembers = async () => {
-    if (pickedEmails.length === 0) {
-      toast.error('Select at least one contact');
-      return;
-    }
-
+  const handleAddMembers = async (emails: string[], subscribed = true) => {
     setIsAddingMembers(true);
     try {
-      const result = await network.fetch<{added: number; notFound: string[]}, typeof SegmentSchemas.members>(
+      const result = await network.fetch<{added: number; created: number; notFound: string[]}, typeof SegmentSchemas.members>(
         'POST',
         `/segments/${id}/members`,
-        {emails: pickedEmails},
+        {emails, createMissing: true, subscribed},
       );
 
-      toast.success(`Added ${result.added} contact${result.added !== 1 ? 's' : ''} to segment`);
+      const msg = result.created > 0
+        ? `Added ${result.added} contact${result.added !== 1 ? 's' : ''} (${result.created} new)`
+        : `Added ${result.added} contact${result.added !== 1 ? 's' : ''} to segment`;
+      toast.success(msg);
       setPickedEmails([]);
       void mutate();
       void mutateContacts();
@@ -178,22 +180,7 @@ export default function SegmentDetailPage() {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center py-12">
-          <div className="text-center">
-            <svg
-              className="h-8 w-8 animate-spin mx-auto text-neutral-900"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              />
-            </svg>
-            <p className="mt-2 text-sm text-neutral-500">Loading segment...</p>
-          </div>
+          <IconSpinner />
         </div>
       </DashboardLayout>
     );
@@ -207,12 +194,12 @@ export default function SegmentDetailPage() {
           <p className="text-neutral-500 mb-6">
             The segment you&apos;re looking for doesn&apos;t exist or has been deleted.
           </p>
-          <Link href="/segments">
-            <Button>
+          <Button asChild>
+            <Link href="/segments">
               <ArrowLeft className="h-4 w-4" />
               Back to Segments
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         </div>
       </DashboardLayout>
     );
@@ -222,25 +209,20 @@ export default function SegmentDetailPage() {
 
   return (
     <DashboardLayout>
+      <NextSeo title={segment.name} />
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Link href="/segments">
-              <Button variant="outline" size="sm">
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-            </Link>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/segments"><ArrowLeft className="h-4 w-4" /></Link>
+            </Button>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-3xl font-bold text-neutral-900">{segment.name}</h1>
-                <span
-                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    isStatic ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
-                  }`}
-                >
+                <h1 className="text-2xl sm:text-3xl font-bold text-neutral-900">{segment.name}</h1>
+                <Badge variant={isStatic ? 'neutral' : 'default'}>
                   {isStatic ? 'Static' : 'Dynamic'}
-                </span>
+                </Badge>
               </div>
               {segment.description && <p className="text-neutral-500 mt-1">{segment.description}</p>}
             </div>
@@ -293,7 +275,7 @@ export default function SegmentDetailPage() {
                       type="checkbox"
                       checked={trackMembership}
                       onChange={e => setTrackMembership(e.target.checked)}
-                      className="mt-1 h-4 w-4 text-neutral-900 focus:ring-neutral-900 border-neutral-300 rounded"
+                      className="mt-1 h-4 w-4 text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 border-neutral-300 rounded"
                     />
                     <div className="flex-1">
                       <Label htmlFor="trackMembership" className="font-medium cursor-pointer">
@@ -310,8 +292,12 @@ export default function SegmentDetailPage() {
               {/* Filter Builder (DYNAMIC only) */}
               {!isStatic && (
                 <Card>
-                  <CardContent className="pt-6">
-                    <SegmentFilterBuilder condition={condition} onChange={setCondition} />
+                  <CardHeader>
+                    <CardTitle>Filter Conditions</CardTitle>
+                    <CardDescription>Build complex audience filters with AND/OR logic</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <SegmentFilterBuilder condition={condition} onChange={setCondition} currentSegmentId={id as string} />
                   </CardContent>
                 </Card>
               )}
@@ -330,24 +316,26 @@ export default function SegmentDetailPage() {
               <Card>
                 <CardHeader>
                   <CardTitle>Add Members</CardTitle>
-                  <CardDescription>Search and select contacts to add to this segment</CardDescription>
+                  <CardDescription>Search and select contacts, or paste a list of emails</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <ContactPicker
                     selected={pickedEmails}
                     onChange={setPickedEmails}
+                    onAdd={handleAddMembers}
                     existing={contactsData?.data.map(c => c.email) ?? []}
                     placeholder="Search contacts to add..."
                   />
-                  <Button
-                    type="button"
-                    onClick={handleAddMembers}
-                    disabled={isAddingMembers || pickedEmails.length === 0}
-                  >
-                    {isAddingMembers
-                      ? 'Adding...'
-                      : `Add ${pickedEmails.length > 0 ? pickedEmails.length : ''} Contact${pickedEmails.length !== 1 ? 's' : ''}`}
-                  </Button>
+                  {pickedEmails.length > 0 && (
+                    <Button
+                      type="button"
+                      onClick={() => void handleAddMembers(pickedEmails)}
+                      disabled={isAddingMembers}
+                      className="w-full"
+                    >
+                      {isAddingMembers ? 'Adding...' : `Add ${pickedEmails.length} Contact${pickedEmails.length !== 1 ? 's' : ''}`}
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             )}
@@ -376,12 +364,11 @@ export default function SegmentDetailPage() {
                     <p className="text-sm text-neutral-500">Loading contacts...</p>
                   </div>
                 ) : contactsData?.data.length === 0 ? (
-                  <div className="text-center py-8">
-                    <Users className="h-12 w-12 text-neutral-400 mx-auto mb-4" />
-                    <p className="text-neutral-500">
-                      {isStatic ? 'No members in this segment yet' : 'No contacts match this segment'}
-                    </p>
-                  </div>
+                  <EmptyState
+                    icon={Users}
+                    title={isStatic ? 'No members yet' : 'No contacts match'}
+                    description={isStatic ? 'Add contacts to this segment to get started.' : 'No contacts currently match these filter conditions.'}
+                  />
                 ) : (
                   <>
                     <div className="space-y-2">
@@ -396,18 +383,15 @@ export default function SegmentDetailPage() {
                             <span className="text-sm font-medium">{contact.email}</span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <Link href={`/contacts/${contact.id}`}>
-                              <Button variant="ghost" size="sm">
-                                View
-                              </Button>
-                            </Link>
+                            <Button asChild variant="ghost" size="sm">
+                              <Link href={`/contacts/${contact.id}`}>View</Link>
+                            </Button>
                             {isStatic && (
                               <Button
-                                variant="ghost"
+                                variant="destructiveGhost"
                                 size="sm"
                                 onClick={() => handleRemoveMember(contact.email)}
                                 disabled={removingEmail === contact.email}
-                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
                               >
                                 <UserMinus className="h-4 w-4" />
                               </Button>
@@ -477,7 +461,7 @@ export default function SegmentDetailPage() {
                     </div>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <Filter className="h-4 w-4 text-neutral-500" />
+                        <Layers className="h-4 w-4 text-neutral-500" />
                         <span className="text-sm text-neutral-600">Groups</span>
                       </div>
                       <span className="text-lg font-semibold text-neutral-900">
@@ -506,7 +490,7 @@ export default function SegmentDetailPage() {
                   <p className="text-sm font-medium text-neutral-900">Created</p>
                   <div className="group relative inline-block cursor-help">
                     <p className="text-sm text-neutral-500">{dayjs(segment.createdAt).fromNow()}</p>
-                    <div className="hidden group-hover:block absolute z-10 w-48 p-2 bg-neutral-900 text-white text-xs rounded shadow-lg bottom-full left-0 mb-1 whitespace-nowrap">
+                    <div className="hidden group-hover:block absolute z-10 w-48 p-2 bg-neutral-900 text-white text-xs rounded shadow-md bottom-full left-0 mb-1 whitespace-nowrap">
                       {dayjs(segment.createdAt).format('DD MMMM YYYY, hh:mm')}
                     </div>
                   </div>
@@ -516,7 +500,7 @@ export default function SegmentDetailPage() {
                   <p className="text-sm font-medium text-neutral-900">Last Updated</p>
                   <div className="group relative inline-block cursor-help">
                     <p className="text-sm text-neutral-500">{dayjs(segment.updatedAt).fromNow()}</p>
-                    <div className="hidden group-hover:block absolute z-10 w-48 p-2 bg-neutral-900 text-white text-xs rounded shadow-lg bottom-full left-0 mb-1 whitespace-nowrap">
+                    <div className="hidden group-hover:block absolute z-10 w-48 p-2 bg-neutral-900 text-white text-xs rounded shadow-md bottom-full left-0 mb-1 whitespace-nowrap">
                       {dayjs(segment.updatedAt).format('DD MMMM YYYY, hh:mm')}
                     </div>
                   </div>

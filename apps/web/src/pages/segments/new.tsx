@@ -48,14 +48,15 @@ export default function NewSegmentPage() {
       // For static segments with pre-selected contacts, add them now
       if (segmentType === 'STATIC' && selectedContacts.length > 0) {
         try {
-          const result = await network.fetch<{added: number; notFound: string[]}, typeof SegmentSchemas.members>(
+          const result = await network.fetch<{added: number; created: number; notFound: string[]}, typeof SegmentSchemas.members>(
             'POST',
             `/segments/${segment.id}/members`,
-            {emails: selectedContacts},
+            {emails: selectedContacts, createMissing: true},
           );
-          toast.success(
-            `Segment created with ${result.added} contact${result.added !== 1 ? 's' : ''}`,
-          );
+          const msg = result.created > 0
+            ? `Segment created with ${result.added} contact${result.added !== 1 ? 's' : ''} (${result.created} new)`
+            : `Segment created with ${result.added} contact${result.added !== 1 ? 's' : ''}`;
+          toast.success(msg);
         } catch {
           // Segment was created; just warn about members
           toast.warning('Segment created, but some contacts could not be added');
@@ -79,13 +80,11 @@ export default function NewSegmentPage() {
         <div className="space-y-6">
           {/* Header */}
           <div className="flex items-center gap-4">
-            <Link href="/segments">
-              <Button variant="outline" size="sm">
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-            </Link>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/segments"><ArrowLeft className="h-4 w-4" /></Link>
+            </Button>
             <div>
-              <h1 className="text-3xl font-bold text-neutral-900">Create Segment</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold text-neutral-900">Create Segment</h1>
               <p className="text-neutral-500 mt-1">
                 {segmentType === 'DYNAMIC'
                   ? 'Build complex audience filters with AND/OR logic'
@@ -159,7 +158,7 @@ export default function NewSegmentPage() {
                     type="checkbox"
                     checked={trackMembership}
                     onChange={e => setTrackMembership(e.target.checked)}
-                    className="mt-1 h-4 w-4 text-neutral-900 focus:ring-neutral-900 border-neutral-300 rounded"
+                    className="mt-1 h-4 w-4 text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 border-neutral-300 rounded"
                   />
                   <div className="flex-1">
                     <Label htmlFor="trackMembership" className="font-medium cursor-pointer">
@@ -176,7 +175,11 @@ export default function NewSegmentPage() {
             {/* Filter Builder or Contact Picker */}
             {segmentType === 'DYNAMIC' ? (
               <Card>
-                <CardContent className="pt-6">
+                <CardHeader>
+                  <CardTitle>Filter Conditions</CardTitle>
+                  <CardDescription>Build complex audience filters with AND/OR logic</CardDescription>
+                </CardHeader>
+                <CardContent>
                   <SegmentFilterBuilder condition={condition} onChange={setCondition} />
                 </CardContent>
               </Card>
@@ -192,6 +195,7 @@ export default function NewSegmentPage() {
                   <ContactPicker
                     selected={selectedContacts}
                     onChange={setSelectedContacts}
+                    onAdd={async (emails, _subscribed) => setSelectedContacts(prev => [...new Set([...prev, ...emails])])}
                     placeholder="Search and select contacts..."
                   />
                 </CardContent>
@@ -200,11 +204,9 @@ export default function NewSegmentPage() {
 
             {/* Actions */}
             <div className="flex items-center justify-end gap-2">
-              <Link href="/segments">
-                <Button type="button" variant="outline" disabled={isSubmitting}>
-                  Cancel
-                </Button>
-              </Link>
+              <Button asChild variant="outline" disabled={isSubmitting}>
+                <Link href="/segments">Cancel</Link>
+              </Button>
               <Button type="submit" disabled={isSubmitting}>
                 <Save className="h-4 w-4 mr-2" />
                 {isSubmitting ? 'Creating...' : 'Create Segment'}

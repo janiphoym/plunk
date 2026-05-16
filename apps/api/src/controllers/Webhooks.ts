@@ -3,6 +3,7 @@ import type {Prisma} from '@plunk/db';
 import {EmailSourceType, EmailStatus} from '@plunk/db';
 import type {Request, Response} from 'express';
 import {simpleParser} from 'mailparser';
+import sanitizeHtml from 'sanitize-html';
 import signale from 'signale';
 import type Stripe from 'stripe';
 
@@ -36,6 +37,13 @@ export class Webhooks {
   @CatchAsync
   public async receiveSNSWebhook(req: Request, res: Response) {
     try {
+      // Verify SNS message signature before processing anything
+      const signatureValid = await SecurityService.verifySnsSignature(req.body as Record<string, string>);
+      if (!signatureValid) {
+        signale.warn('[WEBHOOK] SNS signature verification failed — request rejected');
+        return res.status(403).json({success: false, message: 'Invalid SNS signature'});
+      }
+
       // Handle SNS subscription confirmation FIRST (before parsing Message field)
       if (req.body.Type === 'SubscriptionConfirmation') {
         signale.info('SNS Subscription Confirmation received');
@@ -150,15 +158,33 @@ export class Webhooks {
             // Parse email content if available
             let htmlBody: string | undefined;
 
-            if (body.content) {
+            if (body.content && typeof body.content === 'string') {
               try {
-                const parsed = await simpleParser(body.content);
-                // Prefer HTML body, fallback to text if no HTML available
-                htmlBody = parsed.html ? String(parsed.html) : parsed.text || undefined;
-                signale.info('[WEBHOOK] Email content parsed successfully');
+                const isBase64 = body.receipt?.action?.encoding === 'BASE64';
+                const emailBuffer = isBase64
+                  ? Buffer.from(body.content, 'base64')
+                  : Buffer.from(body.content);
+
+                const parsed = await simpleParser(emailBuffer);
+                const raw =
+                  (parsed.html ? String(parsed.html) : undefined) ??
+                  parsed.textAsHtml ??
+                  parsed.text ??
+                  undefined;
+
+                if (raw) {
+                  htmlBody = sanitizeHtml(raw, {
+                    allowedTags: sanitizeHtml.defaults.allowedTags.concat(['img']),
+                    allowedAttributes: {
+                      ...sanitizeHtml.defaults.allowedAttributes,
+                      img: ['src', 'alt', 'width', 'height'],
+                      '*': ['style'],
+                    },
+                    allowedSchemes: ['http', 'https', 'mailto'],
+                  });
+                }
               } catch (parseError) {
                 signale.error('[WEBHOOK] Failed to parse email content:', parseError);
-                // Continue processing without content
               }
             }
 
@@ -504,10 +530,24 @@ export class Webhooks {
             },
           });
 
+          // Base onboarding credit: refund the 1-unit card-verification charge
+          let creditBalance = -100;
+
+          // Switching-offer promo: 2 extra units of credit if the customer typed SWITCH
+          // into the Promo code custom field on Stripe Checkout.
+          const promoField = session.custom_fields?.find((f) => f.key === 'promo_code');
+          const promoCode = promoField?.text?.value?.trim().toUpperCase();
+          if (promoCode === 'SWITCH') {
+            creditBalance -= 200;
+            signale.success(`[WEBHOOK] SWITCH promo applied for project ${projectId}`);
+          } else if (promoCode) {
+            signale.info(`[WEBHOOK] Unknown promo code "${promoCode}" entered for project ${projectId}`);
+          }
+
           // Update Stripe customer name to match project name and add credit for onboarding fee
           await stripe.customers.update(customerId, {
             name: updatedProject.name,
-            balance: -100,
+            balance: creditBalance,
           });
 
           signale.success(`[WEBHOOK] Checkout completed for project ${projectId}`);
@@ -642,6 +682,86 @@ export class Webhooks {
 
           // Send notification about subscription update
           await NtfyService.notifySubscriptionUpdated(project.name, project.id);
+          break;
+        }
+
+        case 'radar.early_fraud_warning.created': {
+          const warning = event.data.object as Stripe.Radar.EarlyFraudWarning;
+          const chargeId = typeof warning.charge === 'string' ? warning.charge : warning.charge?.id;
+
+          if (!chargeId) {
+            signale.warn('[WEBHOOK] radar.early_fraud_warning.created missing charge ID');
+            break;
+          }
+
+          signale.warn(`[WEBHOOK] Early fraud warning received for charge ${chargeId} (${warning.fraud_type})`);
+
+          // Retrieve the charge to get card fingerprint and customer email
+          const charge = await stripe.charges.retrieve(chargeId, {
+            expand: ['payment_method_details', 'billing_details'],
+          });
+
+          const cardFingerprint = charge.payment_method_details?.card?.fingerprint ?? null;
+          const customerEmail = charge.billing_details?.email ?? null;
+
+          // Refund the charge
+          try {
+            await stripe.refunds.create({charge: chargeId});
+            signale.success(`[WEBHOOK] Refunded charge ${chargeId} due to early fraud warning`);
+          } catch (refundError) {
+            signale.error(`[WEBHOOK] Failed to refund charge ${chargeId}:`, refundError);
+          }
+
+          // Add card fingerprint and email to Stripe Radar blocklist value lists
+          if (cardFingerprint) {
+            try {
+              const lists = await stripe.radar.valueLists.list({alias: 'blocked_card_fingerprints'});
+              let listId: string;
+
+              const existingList = lists.data[0];
+              if (existingList) {
+                listId = existingList.id;
+              } else {
+                const newList = await stripe.radar.valueLists.create({
+                  alias: 'blocked_card_fingerprints',
+                  name: 'Blocked Card Fingerprints',
+                  item_type: 'card_fingerprint',
+                });
+                listId = newList.id;
+              }
+
+              await stripe.radar.valueListItems.create({value_list: listId, value: cardFingerprint});
+              signale.success(`[WEBHOOK] Added card fingerprint ${cardFingerprint} to Radar blocklist`);
+            } catch (blocklistError) {
+              signale.error(`[WEBHOOK] Failed to add card fingerprint to Radar blocklist:`, blocklistError);
+            }
+          }
+
+          if (customerEmail) {
+            try {
+              const emailLists = await stripe.radar.valueLists.list({alias: 'blocked_emails'});
+              let emailListId: string;
+
+              const existingEmailList = emailLists.data[0];
+              if (existingEmailList) {
+                emailListId = existingEmailList.id;
+              } else {
+                const newList = await stripe.radar.valueLists.create({
+                  alias: 'blocked_emails',
+                  name: 'Blocked Emails',
+                  item_type: 'email',
+                });
+                emailListId = newList.id;
+              }
+
+              await stripe.radar.valueListItems.create({value_list: emailListId, value: customerEmail});
+              signale.success(`[WEBHOOK] Added email ${customerEmail} to Radar blocklist`);
+            } catch (blocklistError) {
+              signale.error(`[WEBHOOK] Failed to add email to Radar blocklist:`, blocklistError);
+            }
+          }
+
+          await NtfyService.notifyEarlyFraudWarning(chargeId, warning.fraud_type, cardFingerprint, customerEmail);
           break;
         }
 

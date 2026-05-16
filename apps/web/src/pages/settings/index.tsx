@@ -5,6 +5,7 @@ import {ProjectSchemas, SUPPORTED_LANGUAGES} from '@plunk/shared';
 import {TrackingMode} from '@plunk/db';
 import {
   Alert,
+  AlertDescription,
   Button,
   Card,
   CardContent,
@@ -85,17 +86,17 @@ const buildTabs = (options: {billingEnabled: boolean; smtpEnabled: boolean}): Ta
 
 export default function Settings() {
   const router = useRouter();
-  const {activeProject, setActiveProject} = useActiveProject();
+  const {activeProject, setActiveProject, updateActiveProject} = useActiveProject();
   const {mutate: projectsMutate} = useProjects();
   const {data: config} = useConfig();
   const {data: user} = useUser();
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [showRegenerateDialog, setShowRegenerateDialog] = useState(false);
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [showResetDialog, setShowResetDialog] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [resetConfirmText, setResetConfirmText] = useState('');
+
+  type SettingsDialog = {type: 'none'} | {type: 'regenerate'} | {type: 'delete'} | {type: 'reset'};
+  const [dialog, setDialog] = useState<SettingsDialog>({type: 'none'});
   const [isLoadingBilling, setIsLoadingBilling] = useState(false);
   const [selectedCurrency, setSelectedCurrency] = useState<string>('auto');
   const [showCurrencySelector, setShowCurrencySelector] = useState(false);
@@ -200,8 +201,8 @@ export default function Settings() {
         values,
       );
 
-      // Update the active project in context
-      setActiveProject(updatedProject);
+      // Update the active project in context without invalidating the full SWR cache
+      updateActiveProject(updatedProject);
 
       // Refresh projects list
       await projectsMutate();
@@ -234,18 +235,18 @@ export default function Settings() {
       await projectsMutate();
 
       setSuccessMessage('API keys regenerated successfully');
-      setShowRegenerateDialog(false);
+      setDialog({type: 'none'});
 
       // Clear success message after 3 seconds
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to regenerate API keys');
-      setShowRegenerateDialog(false);
+      setDialog({type: 'none'});
     }
   };
 
   const promptRegenerateKeys = () => {
-    setShowRegenerateDialog(true);
+    setDialog({type: 'regenerate'});
   };
 
   const handleStartSubscription = async (currency: string = 'auto') => {
@@ -313,7 +314,7 @@ export default function Settings() {
       await network.fetch('POST', `/users/@me/projects/${activeProject.id}/reset`);
 
       setSuccessMessage('Project reset successfully. All data has been cleared.');
-      setShowResetDialog(false);
+      setDialog({type: 'none'});
       setResetConfirmText('');
 
       // Refresh the page to reload data
@@ -322,7 +323,7 @@ export default function Settings() {
       }, 1500);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to reset project');
-      setShowResetDialog(false);
+      setDialog({type: 'none'});
       setResetConfirmText('');
     }
   };
@@ -337,7 +338,7 @@ export default function Settings() {
       await network.fetch('DELETE', `/users/@me/projects/${activeProject.id}`);
 
       setSuccessMessage('Project deleted successfully. Redirecting...');
-      setShowDeleteDialog(false);
+      setDialog({type: 'none'});
       setDeleteConfirmText('');
 
       // Refresh projects list and redirect to dashboard
@@ -349,7 +350,7 @@ export default function Settings() {
       }, 1500);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to delete project');
-      setShowDeleteDialog(false);
+      setDialog({type: 'none'});
       setDeleteConfirmText('');
     }
   };
@@ -374,7 +375,7 @@ export default function Settings() {
         <div className="space-y-8">
           {/* Header */}
           <div>
-            <h1 className="text-3xl font-bold text-neutral-900">Settings</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-neutral-900">Settings</h1>
             <p className="text-neutral-500 mt-2">Manage your project settings and preferences</p>
           </div>
 
@@ -394,6 +395,7 @@ export default function Settings() {
 
             {/* General Tab */}
             <TabsContent value="general">
+              <div className="space-y-6">
               <Card>
                 <CardHeader>
                   <CardTitle>Project Settings</CardTitle>
@@ -490,12 +492,6 @@ export default function Settings() {
                         )}
                       />
 
-                      <div className="flex justify-end">
-                        <Button type="submit" disabled={form.formState.isSubmitting}>
-                          {form.formState.isSubmitting ? 'Saving...' : 'Save Changes'}
-                        </Button>
-                      </div>
-
                       {/* Success/Error Messages */}
                       <AnimatePresence mode="wait">
                         {successMessage && (
@@ -519,13 +515,19 @@ export default function Settings() {
                           </motion.div>
                         )}
                       </AnimatePresence>
+
+                      <div className="flex justify-end">
+                        <Button type="submit" disabled={form.formState.isSubmitting}>
+                          {form.formState.isSubmitting ? 'Saving...' : 'Save Changes'}
+                        </Button>
+                      </div>
                     </form>
                   </Form>
                 </CardContent>
               </Card>
 
               {/* API Keys - Separate Card */}
-              <Card className="mt-6">
+              <Card>
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <div>
@@ -553,7 +555,7 @@ export default function Settings() {
               </Card>
 
               {/* Danger Zone - Separate Card */}
-              <Card className="border-red-200 mt-6">
+              <Card className="border-red-200">
                 <CardHeader className="border-b border-red-100 bg-red-50">
                   <div className="flex items-center gap-3">
                     <div className="p-2 bg-white rounded-lg shadow-sm border border-red-200">
@@ -567,13 +569,13 @@ export default function Settings() {
                     </div>
                   </div>
                 </CardHeader>
-                <CardContent className="pt-6 space-y-6">
-                  {/* Reset Project */}
-                  <div className="group">
-                    <div className="flex items-start justify-between gap-4 p-5 rounded-lg border border-neutral-200 bg-white transition-all">
+                <CardContent className="p-0">
+                  <div className="divide-y divide-neutral-100">
+                    {/* Reset Project */}
+                    <div className="flex items-start justify-between gap-4 px-6 py-5">
                       <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Database className="h-4 w-4 text-orange-600" />
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <Database className="h-4 w-4 text-amber-700" />
                           <h4 className="font-semibold text-neutral-900">Reset Project Data</h4>
                         </div>
                         <p className="text-sm text-neutral-600 mb-3">
@@ -585,22 +587,15 @@ export default function Settings() {
                           <span>API keys, domains, billing information</span>
                         </div>
                       </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => setShowResetDialog(true)}
-                        className="shrink-0 border-orange-300 text-orange-700 hover:bg-orange-50 hover:border-orange-400"
-                      >
+                      <Button type="button" variant="outline" onClick={() => setDialog({type: 'reset'})} className="shrink-0">
                         Reset Data
                       </Button>
                     </div>
-                  </div>
 
-                  {/* Delete Project */}
-                  <div className="group">
-                    <div className="flex items-start justify-between gap-4 p-5 rounded-lg border-2 border-red-200 bg-red-50/50 transition-all">
+                    {/* Delete Project */}
+                    <div className="flex items-start justify-between gap-4 px-6 py-5 bg-red-50/40">
                       <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
+                        <div className="flex items-center gap-2 mb-1.5">
                           <AlertTriangle className="h-4 w-4 text-red-600" />
                           <h4 className="font-semibold text-red-900">Delete Project Permanently</h4>
                         </div>
@@ -619,7 +614,7 @@ export default function Settings() {
                       <Button
                         type="button"
                         variant="destructive"
-                        onClick={() => setShowDeleteDialog(true)}
+                        onClick={() => setDialog({type: 'delete'})}
                         className="shrink-0"
                       >
                         Delete Project
@@ -628,6 +623,7 @@ export default function Settings() {
                   </div>
                 </CardContent>
               </Card>
+              </div>
             </TabsContent>
 
             {/* Billing Tab */}
@@ -757,7 +753,7 @@ export default function Settings() {
                 {/* Billing Limits */}
                 <BillingLimits
                   projectId={activeProject.id}
-                  hasSubscription={!!activeProject.subscription}
+                  tier={activeProject.subscription ? 'paid' : 'free'}
                   billingEnabled={billingEnabled}
                 />
 
@@ -818,29 +814,29 @@ export default function Settings() {
         </div>
 
         {/* Regenerate Keys Confirmation Dialog */}
-        <Dialog open={showRegenerateDialog} onOpenChange={setShowRegenerateDialog}>
+        <Dialog open={dialog.type === 'regenerate'} onOpenChange={open => !open && setDialog({type: 'none'})}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-orange-500" />
+                <AlertTriangle className="h-5 w-5 text-amber-600" />
                 Regenerate API Keys
               </DialogTitle>
-              <DialogDescription className="space-y-2">
+              <DialogDescription className="space-y-3">
                 <p>Are you sure you want to regenerate your API keys?</p>
-                <Alert className="bg-orange-50 border-orange-200 text-orange-900 text-xs">
+                <Alert variant="warning">
                   <AlertTriangle className="h-4 w-4" />
-                  <div className="ml-2">
-                    <strong>Warning:</strong> This action will immediately invalidate your current API keys. Any
-                    applications using the old keys will stop working until you update them with the new keys.
-                  </div>
+                  <AlertDescription>
+                    Current keys will be <strong>immediately invalidated</strong>. Any integrations using the old keys
+                    will stop working until updated.
+                  </AlertDescription>
                 </Alert>
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setShowRegenerateDialog(false)}>
+              <Button variant="outline" onClick={() => setDialog({type: 'none'})}>
                 Cancel
               </Button>
-              <Button variant="default" onClick={handleRegenerateKeys} className="bg-orange-600 hover:bg-orange-700">
+              <Button variant="destructive" onClick={handleRegenerateKeys}>
                 Regenerate Keys
               </Button>
             </DialogFooter>
@@ -848,11 +844,11 @@ export default function Settings() {
         </Dialog>
 
         {/* Reset Project Confirmation Dialog */}
-        <Dialog open={showResetDialog} onOpenChange={setShowResetDialog}>
+        <Dialog open={dialog.type === 'reset'} onOpenChange={open => !open && setDialog({type: 'none'})}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader className="space-y-3">
-              <div className="mx-auto w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
-                <Database className="h-6 w-6 text-orange-600" />
+              <div className="mx-auto w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center">
+                <Database className="h-6 w-6 text-amber-700" />
               </div>
               <DialogTitle className="text-center text-xl">Reset Project Data?</DialogTitle>
               <DialogDescription className="text-center text-base">
@@ -864,7 +860,7 @@ export default function Settings() {
             <div className="py-4">
               <label className="text-sm font-medium text-neutral-700 block mb-2 text-center">
                 Type{' '}
-                <span className="font-mono font-semibold text-orange-600 bg-orange-50 px-2 py-0.5 rounded">RESET</span>{' '}
+                <span className="font-mono font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded">RESET</span>{' '}
                 to confirm
               </label>
               <Input
@@ -880,7 +876,7 @@ export default function Settings() {
               <Button
                 variant="outline"
                 onClick={() => {
-                  setShowResetDialog(false);
+                  setDialog({type: 'none'});
                   setResetConfirmText('');
                 }}
                 className="w-full"
@@ -888,9 +884,10 @@ export default function Settings() {
                 Cancel
               </Button>
               <Button
+                variant="destructive"
                 onClick={handleResetProject}
                 disabled={resetConfirmText !== 'RESET'}
-                className="w-full bg-orange-600 hover:bg-orange-700 disabled:opacity-50"
+                className="w-full"
               >
                 Reset Data
               </Button>
@@ -899,7 +896,7 @@ export default function Settings() {
         </Dialog>
 
         {/* Delete Project Confirmation Dialog */}
-        <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <Dialog open={dialog.type === 'delete'} onOpenChange={open => !open && setDialog({type: 'none'})}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader className="space-y-3">
               <div className="mx-auto w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
@@ -937,7 +934,7 @@ export default function Settings() {
               <Button
                 variant="outline"
                 onClick={() => {
-                  setShowDeleteDialog(false);
+                  setDialog({type: 'none'});
                   setDeleteConfirmText('');
                 }}
                 className="w-full"
@@ -945,9 +942,10 @@ export default function Settings() {
                 Cancel
               </Button>
               <Button
+                variant="destructive"
                 onClick={handleDeleteProject}
                 disabled={deleteConfirmText !== 'DELETE'}
-                className="w-full bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                className="w-full"
               >
                 Delete Forever
               </Button>

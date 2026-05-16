@@ -12,11 +12,13 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  EmptyState,
   Label,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
+  IconSpinner,
   SelectValue,
 } from '@plunk/ui';
 import type {Campaign} from '@plunk/db';
@@ -95,23 +97,16 @@ export function CampaignSelectionDialog({open, onOpenChange, onSelectCampaign}: 
   };
 
   const getStatusBadge = (status: CampaignStatus) => {
-    const variants: Record<
-      CampaignStatus,
-      {variant: 'default' | 'secondary' | 'destructive' | 'outline'; label: string; className?: string}
-    > = {
-      DRAFT: {variant: 'secondary', label: 'Draft', className: 'bg-neutral-100 text-neutral-700'},
-      SCHEDULED: {variant: 'default', label: 'Scheduled', className: 'bg-blue-100 text-blue-700'},
-      SENDING: {variant: 'default', label: 'Sending', className: 'bg-purple-100 text-purple-700'},
-      SENT: {variant: 'default', label: 'Sent', className: 'bg-green-100 text-green-700'},
-      CANCELLED: {variant: 'destructive', label: 'Cancelled', className: 'bg-red-100 text-red-700'},
+    const variants: Record<CampaignStatus, {variant: 'neutral' | 'default' | 'success'; label: string}> = {
+      DRAFT:     {variant: 'neutral', label: 'Draft'},
+      SCHEDULED: {variant: 'default', label: 'Scheduled'},
+      SENDING:   {variant: 'default', label: 'Sending'},
+      SENT:      {variant: 'success', label: 'Sent'},
+      CANCELLED: {variant: 'neutral', label: 'Cancelled'},
     };
 
     const config = variants[status];
-    return (
-      <Badge variant={config.variant} className={config.className}>
-        {config.label}
-      </Badge>
-    );
+    return <Badge variant={config.variant}>{config.label}</Badge>;
   };
 
   const getAudienceLabel = (campaign: Campaign) => {
@@ -130,7 +125,7 @@ export function CampaignSelectionDialog({open, onOpenChange, onSelectCampaign}: 
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {step === 'configure' && (
-              <Button variant="ghost" size="sm" onClick={handleBack} className="h-8 w-8 p-0">
+              <Button variant="ghost" size="icon" onClick={handleBack}>
                 <ArrowLeft className="h-4 w-4" />
               </Button>
             )}
@@ -166,39 +161,22 @@ export function CampaignSelectionDialog({open, onOpenChange, onSelectCampaign}: 
             <div className="flex-1 overflow-y-auto space-y-3">
               {isLoading && (
                 <div className="flex items-center justify-center py-12">
-                  <div className="text-center">
-                    <svg
-                      className="h-8 w-8 animate-spin mx-auto text-neutral-900"
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      />
-                    </svg>
-                    <p className="mt-2 text-sm text-neutral-500">Loading campaigns...</p>
-                  </div>
+                  <IconSpinner />
                 </div>
               )}
 
               {!isLoading && data?.data.length === 0 && (
-                <div className="text-center py-12">
-                  <Mail className="h-12 w-12 text-neutral-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-neutral-900 mb-2">No campaigns found</h3>
-                  <p className="text-neutral-500">
-                    {statusFilter !== 'ALL' ? 'Try adjusting your filter' : 'Create your first campaign to get started'}
-                  </p>
-                </div>
+                <EmptyState
+                  icon={Mail}
+                  title="No campaigns found"
+                  description={statusFilter !== 'ALL' ? 'Try adjusting your filter.' : 'Create your first campaign to get started.'}
+                />
               )}
 
               {data?.data.map(campaign => (
                 <Card
                   key={campaign.id}
-                  className="cursor-pointer hover:border-primary/50 hover:shadow-md transition-all"
+                  className="cursor-pointer hover:border-neutral-400 transition-colors"
                   onClick={() => handleCampaignClick(campaign)}
                 >
                   <CardHeader className="pb-3">
@@ -266,30 +244,24 @@ export function CampaignSelectionDialog({open, onOpenChange, onSelectCampaign}: 
         ) : (
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto space-y-6 pr-2">
+            <div className="flex-1 overflow-y-auto pr-2">
               {/* Campaign Preview */}
               {selectedCampaign && (
-                <Card className="bg-neutral-50">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <CardTitle className="text-base">{selectedCampaign.name}</CardTitle>
-                          {getStatusBadge(selectedCampaign.status)}
-                        </div>
-                        {selectedCampaign.description && (
-                          <CardDescription className="text-xs">{selectedCampaign.description}</CardDescription>
-                        )}
-                      </div>
-                    </div>
-                  </CardHeader>
-                </Card>
+                <div className="pb-4 mb-1 border-b border-neutral-100">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-neutral-900">{selectedCampaign.name}</span>
+                    {getStatusBadge(selectedCampaign.status)}
+                  </div>
+                  {selectedCampaign.description && (
+                    <p className="text-xs text-neutral-500 mt-1">{selectedCampaign.description}</p>
+                  )}
+                </div>
               )}
 
               {/* Field Selection */}
-              <div className="space-y-3">
+              <div className="divide-y divide-neutral-100">
                 <div
-                  className="flex items-center space-x-3 p-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 transition-colors cursor-pointer"
+                  className="flex items-center gap-3 py-3 cursor-pointer hover:text-neutral-900 transition-colors"
                   onClick={() => toggleField('subject')}
                 >
                   <Checkbox
@@ -302,13 +274,13 @@ export function CampaignSelectionDialog({open, onOpenChange, onSelectCampaign}: 
                       Email Subject
                     </Label>
                     {selectedCampaign?.subject && (
-                      <p className="text-xs text-neutral-500 mt-0.5">{selectedCampaign.subject}</p>
+                      <p className="text-xs text-neutral-400 mt-0.5 truncate">{selectedCampaign.subject}</p>
                     )}
                   </div>
                 </div>
 
                 <div
-                  className="flex items-center space-x-3 p-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 transition-colors cursor-pointer"
+                  className="flex items-center gap-3 py-3 cursor-pointer hover:text-neutral-900 transition-colors"
                   onClick={() => toggleField('body')}
                 >
                   <Checkbox id="body" checked={selectedFields.body} onCheckedChange={() => toggleField('body')} />
@@ -316,12 +288,12 @@ export function CampaignSelectionDialog({open, onOpenChange, onSelectCampaign}: 
                     <Label htmlFor="body" className="text-sm font-medium cursor-pointer">
                       Email Body
                     </Label>
-                    <p className="text-xs text-neutral-500 mt-0.5">The full email content and design</p>
+                    <p className="text-xs text-neutral-400 mt-0.5">Full email content and design</p>
                   </div>
                 </div>
 
                 <div
-                  className="flex items-center space-x-3 p-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 transition-colors cursor-pointer"
+                  className="flex items-center gap-3 py-3 cursor-pointer hover:text-neutral-900 transition-colors"
                   onClick={() => toggleField('from')}
                 >
                   <Checkbox id="from" checked={selectedFields.from} onCheckedChange={() => toggleField('from')} />
@@ -330,13 +302,13 @@ export function CampaignSelectionDialog({open, onOpenChange, onSelectCampaign}: 
                       From Email
                     </Label>
                     {selectedCampaign?.from && (
-                      <p className="text-xs text-neutral-500 mt-0.5">{selectedCampaign.from}</p>
+                      <p className="text-xs text-neutral-400 mt-0.5">{selectedCampaign.from}</p>
                     )}
                   </div>
                 </div>
 
                 <div
-                  className="flex items-center space-x-3 p-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 transition-colors cursor-pointer"
+                  className="flex items-center gap-3 py-3 cursor-pointer hover:text-neutral-900 transition-colors"
                   onClick={() => toggleField('fromName')}
                 >
                   <Checkbox
@@ -349,13 +321,13 @@ export function CampaignSelectionDialog({open, onOpenChange, onSelectCampaign}: 
                       From Name
                     </Label>
                     {selectedCampaign?.fromName && (
-                      <p className="text-xs text-neutral-500 mt-0.5">{selectedCampaign.fromName}</p>
+                      <p className="text-xs text-neutral-400 mt-0.5">{selectedCampaign.fromName}</p>
                     )}
                   </div>
                 </div>
 
                 <div
-                  className="flex items-center space-x-3 p-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 transition-colors cursor-pointer"
+                  className="flex items-center gap-3 py-3 cursor-pointer hover:text-neutral-900 transition-colors"
                   onClick={() => toggleField('replyTo')}
                 >
                   <Checkbox
@@ -368,13 +340,13 @@ export function CampaignSelectionDialog({open, onOpenChange, onSelectCampaign}: 
                       Reply-To Email
                     </Label>
                     {selectedCampaign?.replyTo && (
-                      <p className="text-xs text-neutral-500 mt-0.5">{selectedCampaign.replyTo}</p>
+                      <p className="text-xs text-neutral-400 mt-0.5">{selectedCampaign.replyTo}</p>
                     )}
                   </div>
                 </div>
 
                 <div
-                  className="flex items-center space-x-3 p-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 transition-colors cursor-pointer"
+                  className="flex items-center gap-3 py-3 cursor-pointer hover:text-neutral-900 transition-colors"
                   onClick={() => toggleField('audience')}
                 >
                   <Checkbox
@@ -387,7 +359,7 @@ export function CampaignSelectionDialog({open, onOpenChange, onSelectCampaign}: 
                       Audience Settings
                     </Label>
                     {selectedCampaign && (
-                      <p className="text-xs text-neutral-500 mt-0.5">{getAudienceLabel(selectedCampaign)}</p>
+                      <p className="text-xs text-neutral-400 mt-0.5">{getAudienceLabel(selectedCampaign)}</p>
                     )}
                   </div>
                 </div>

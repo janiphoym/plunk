@@ -8,7 +8,6 @@ interface SecurityWarningBannerProps {
 }
 
 export function SecurityWarningBanner({status}: SecurityWarningBannerProps) {
-  // Don't show if no warnings or violations
   const hasCriticalViolations = status.violations.length > 0;
   const hasWarnings = status.warnings.length > 0;
 
@@ -16,12 +15,10 @@ export function SecurityWarningBanner({status}: SecurityWarningBannerProps) {
     return null;
   }
 
-  // Determine severity - critical violations take precedence
   const variant = hasCriticalViolations ? 'destructive' : 'warning';
   const title = hasCriticalViolations
-    ? 'Critical Security Violations - Immediate Action Required'
-    : 'Security Warning - Action Required';
-  const issues = hasCriticalViolations ? status.violations : status.warnings;
+    ? 'Critical - Immediate Action Required'
+    : 'Warning - Action Recommended';
   const messageColor = hasCriticalViolations ? 'text-red-800' : 'text-amber-800';
 
   return (
@@ -30,23 +27,15 @@ export function SecurityWarningBanner({status}: SecurityWarningBannerProps) {
       <AlertTitle>{title}</AlertTitle>
       <AlertDescription className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div className="space-y-2 flex-1">
-          <p className="text-sm font-medium">Your project has exceeded the following security thresholds:</p>
-          <ul className={`list-disc list-inside space-y-1 text-sm ${messageColor}`}>
-            {issues.map((issue, idx) => (
-              <li key={idx}>{issue}</li>
-            ))}
-          </ul>
-          <p className={`text-xs ${messageColor} mt-2`}>
+          <p className={`text-sm ${messageColor}`}>
             {hasCriticalViolations
-              ? 'Your project may be suspended soon. Please review the detailed metrics immediately and take action to improve your email quality.'
-              : 'High bounce or complaint rates can lead to project suspension. Review the detailed metrics and take action to improve your email quality.'}
+              ? 'Your account requires immediate attention. Review your sending practices to avoid suspension. Contact support for more details.'
+              : 'Your account health needs attention. Review your contact lists and sending practices to maintain good standing.'}
           </p>
         </div>
-        <Link href="/settings?tab=security">
-          <Button size="sm" variant="outline" className="w-full sm:w-auto flex-shrink-0">
-            View Details
-          </Button>
-        </Link>
+        <Button asChild size="sm" variant="outline" className="w-full sm:w-auto flex-shrink-0">
+          <Link href="/settings?tab=security">View Details</Link>
+        </Button>
       </AlertDescription>
     </Alert>
   );

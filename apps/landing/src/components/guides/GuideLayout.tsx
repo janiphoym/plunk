@@ -1,4 +1,5 @@
-import {Footer, Navbar} from '../';
+import {FAQSection, Footer, Navbar} from '../';
+import type {FAQ} from '../FAQSection';
 import {motion} from 'framer-motion';
 import React, {ReactNode, useLayoutEffect, useState} from 'react';
 import Link from 'next/link';
@@ -13,6 +14,7 @@ interface GuideLayoutProps {
   children: ReactNode;
   canonical?: string;
   ogImage?: string;
+  faqs?: FAQ[];
 }
 
 /**
@@ -25,8 +27,12 @@ export function GuideLayout({
   readTime,
   children,
   canonical,
-  ogImage = 'https://www.useplunk.com/assets/card.png',
+  ogImage,
+  faqs,
 }: GuideLayoutProps) {
+  const resolvedOgImage =
+    ogImage ||
+    `https://www.useplunk.com/api/og?title=${encodeURIComponent(title)}&description=${encodeURIComponent(description)}&tag=Guide`;
   const [headings, setHeadings] = useState<{id: string; text: string; level: number}[]>([]);
   const [activeId, setActiveId] = useState<string>('');
 
@@ -90,7 +96,7 @@ export function GuideLayout({
           description: description,
           url: canonical,
           type: 'article',
-          images: [{url: ogImage, alt: title}],
+          images: [{url: resolvedOgImage, alt: title, width: 1200, height: 630}],
           article: {
             publishedTime: lastUpdated,
             modifiedTime: lastUpdated,
@@ -103,7 +109,7 @@ export function GuideLayout({
         type="Article"
         url={canonical || ''}
         title={title}
-        images={[ogImage]}
+        images={[resolvedOgImage]}
         datePublished={lastUpdated}
         dateModified={lastUpdated}
         authorName="Plunk"
@@ -114,7 +120,7 @@ export function GuideLayout({
 
       <Navbar />
 
-      <main className={'mx-auto max-w-7xl px-4 sm:px-8 w-full overflow-x-hidden'}>
+      <main className={'mx-auto max-w-[88rem] px-4 sm:px-8 w-full overflow-x-hidden'}>
         <div className={'flex flex-col lg:flex-row gap-8 lg:gap-12 py-8 sm:py-16 w-full'}>
           {/* Main Content */}
           <article className={'flex-1 max-w-full lg:max-w-4xl w-full'}>
@@ -148,7 +154,10 @@ export function GuideLayout({
               transition={{duration: 0.7, ease: [0.22, 1, 0.36, 1]}}
               className={'mb-8 sm:mb-12 w-full'}
             >
-              <h1 className={'text-2xl sm:text-4xl font-bold tracking-tight text-neutral-900 break-words max-w-full'}>
+              <h1
+                style={{fontFamily: 'var(--font-display)'}}
+                className={'text-3xl sm:text-4xl font-bold tracking-[-0.02em] text-neutral-900 break-words max-w-full'}
+              >
                 {title}
               </h1>
               <p
@@ -199,16 +208,16 @@ export function GuideLayout({
               <div className={'rounded-xl border border-neutral-200 bg-white p-6 shadow-sm'}>
                 <h2 className={'text-sm font-semibold text-neutral-900 mb-4 uppercase tracking-wide'}>On this page</h2>
                 <nav>
-                  <ul className={'space-y-1'}>
+                  <ul className={'space-y-0.5'}>
                     {headings.map(heading => (
-                      <li key={heading.id} className={heading.level === 3 ? 'ml-4 mt-0.5' : 'mt-2 first:mt-0'}>
+                      <li key={heading.id} className={heading.level === 3 ? 'ml-3' : ''}>
                         <a
                           href={`#${heading.id}`}
                           onClick={e => {
                             e.preventDefault();
                             const element = document.getElementById(heading.id);
                             if (element) {
-                              const offset = 100; // Account for fixed header
+                              const offset = 100;
                               const elementPosition = element.getBoundingClientRect().top + window.scrollY;
                               window.scrollTo({
                                 top: elementPosition - offset,
@@ -216,14 +225,14 @@ export function GuideLayout({
                               });
                             }
                           }}
-                          className={`block py-1 border-l-2 -ml-px pl-3 transition-all duration-200 ${
+                          className={`block rounded px-2 py-1.5 transition-all duration-200 ${
                             heading.level === 2
                               ? activeId === heading.id
-                                ? 'border-neutral-900 text-neutral-900 font-semibold text-sm'
-                                : 'border-transparent text-neutral-600 hover:text-neutral-900 hover:border-neutral-300 font-medium text-sm'
+                                ? 'bg-neutral-100 text-sm font-semibold text-neutral-900'
+                                : 'text-sm font-medium text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900'
                               : activeId === heading.id
-                                ? 'border-neutral-700 text-neutral-800 font-medium text-xs'
-                                : 'border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-200 text-xs'
+                                ? 'bg-neutral-50 text-xs font-medium text-neutral-800'
+                                : 'text-xs text-neutral-500 hover:bg-neutral-50 hover:text-neutral-700'
                           }`}
                         >
                           {heading.text}
@@ -237,6 +246,13 @@ export function GuideLayout({
           )}
         </div>
       </main>
+
+      {faqs && faqs.length > 0 && (
+        <FAQSection
+          faqs={faqs}
+          schemaId={`faq-${canonical ? canonical.split('/').pop() : 'guide'}`}
+        />
+      )}
 
       <Footer />
     </>
